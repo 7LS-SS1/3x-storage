@@ -1,0 +1,6 @@
+{
+  "name": "@video/edge",
+  "private": true,
+  "scripts": { "dev": "wrangler dev", "build": "wrangler deploy --dry-run", "deploy": "wrangler deploy", "lint": "tsc --noEmit", "typecheck": "tsc --noEmit", "test": "vitest run --passWithNoTests" },
+  "devDependencies": { "@cloudflare/workers-types": "^4.20250722.0", "typescript": "^5.8.3", "vitest": "^3.2.4", "wrangler": "^4.26.0" }
+}

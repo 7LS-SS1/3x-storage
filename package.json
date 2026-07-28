@@ -1,0 +1,20 @@
+{
+  "name": "videos-storage-platform",
+  "private": true,
+  "packageManager": "pnpm@11.11.0",
+  "scripts": {
+    "dev": "corepack pnpm -r --parallel --if-present run dev",
+    "build": "corepack pnpm --filter @video/shared build && corepack pnpm --filter @video/player build && corepack pnpm --filter @video/database build && corepack pnpm --filter @video/api build && corepack pnpm --filter @video/worker build && corepack pnpm --filter @video/edge build && corepack pnpm --filter @video/admin build",
+    "lint": "corepack pnpm -r --if-present run lint",
+    "typecheck": "corepack pnpm -r --if-present run typecheck",
+    "test": "corepack pnpm -r --if-present run test",
+    "test:e2e": "corepack pnpm --filter @video/admin test:e2e",
+    "db:generate": "corepack pnpm --filter @video/database db:generate",
+    "db:migrate": "corepack pnpm --filter @video/database db:migrate",
+    "db:seed": "corepack pnpm --filter @video/database db:seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.6",
+    "typescript": "^5.8.3"
+  }
+}

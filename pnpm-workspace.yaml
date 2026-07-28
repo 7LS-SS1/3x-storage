@@ -1,0 +1,27 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - "argon2"
+  - "esbuild"
+  - "msgpackr-extract"
+  - "prisma"
+  - "sharp"
+  - "workerd"
+overrides:
+  sharp: ">=0.35.0"
+  postcss: ">=8.5.18"
+  js-yaml: ">=5.2.2"
+  brace-expansion: ">=5.0.8"
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  '@scarf/scarf': true
+  argon2: true
+  esbuild: true
+  msgpackr-extract: true
+  prisma: true
+  sharp: true
+  workerd: true

@@ -1,0 +1,214 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+enum Role {
+  SYSTEM
+  ADMIN
+  STAFF
+}
+
+enum VideoStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+  DELETED
+}
+
+enum UploadStatus {
+  INITIATED
+  UPLOADING
+  COMPLETED
+  ABORTED
+  EXPIRED
+}
+
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String
+  passwordHash String
+  role Role @default(STAFF)
+  active Boolean @default(true)
+  failedLoginCount Int @default(0)
+  lockedUntil DateTime?
+  lastLoginAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sessions Session[]
+  videos Video[] @relation("Uploader")
+}
+
+model Session {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  csrfHash String
+  expiresAt DateTime
+  absoluteExpiresAt DateTime
+  lastSeenAt DateTime @default(now())
+  revokedAt DateTime?
+  userAgentHash String?
+  ipHash String?
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@index([userId, expiresAt, revokedAt])
+  @@index([absoluteExpiresAt])
+}
+
+model Category {
+  id String @id @default(cuid())
+  name String @unique
+  slug String @unique
+  active Boolean @default(true)
+  videos Video[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Video {
+  id String @id @default(cuid())
+  publicId String @unique @default(cuid())
+  title String
+  description String?
+  status VideoStatus @default(UPLOADING)
+  fileSize BigInt?
+  durationSeconds Float?
+  width Int?
+  height Int?
+  mimeType String?
+  originalKey String?
+  playbackKey String?
+  posterKey String?
+  playCount Int @default(0)
+  deletedAt DateTime?
+  uploadedById String
+  uploadedBy User @relation("Uploader", fields: [uploadedById], references: [id])
+  categoryId String?
+  category Category? @relation(fields: [categoryId], references: [id])
+  files VideoFile[]
+  uploadSessions UploadSession[]
+  playbackSessions PlaybackSession[]
+  playEvents PlayEvent[]
+  allowedDomains VideoAllowedDomain[]
+  bandwidthDaily BandwidthDaily[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, createdAt])
+  @@index([categoryId, createdAt])
+}
+
+model VideoFile {
+  id String @id @default(cuid())
+  videoId String
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  kind String
+  storageKey String @unique
+  mimeType String
+  size BigInt
+  checksum String?
+  createdAt DateTime @default(now())
+}
+
+model UploadSession {
+  id String @id @default(cuid())
+  videoId String
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  storageUploadId String @unique
+  storageKey String
+  status UploadStatus @default(INITIATED)
+  expiresAt DateTime
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([status, expiresAt])
+}
+
+model AllowedDomain {
+  id String @id @default(cuid())
+  hostname String @unique
+  includeSubdomains Boolean @default(false)
+  active Boolean @default(true)
+  playbackSessions PlaybackSession[]
+  bandwidthDaily BandwidthDaily[]
+  videos VideoAllowedDomain[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VideoAllowedDomain {
+  videoId String
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  allowedDomainId String
+  allowedDomain AllowedDomain @relation(fields: [allowedDomainId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@id([videoId, allowedDomainId])
+}
+
+model PlaybackSession {
+  id String @id
+  videoId String
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  allowedDomainId String
+  allowedDomain AllowedDomain @relation(fields: [allowedDomainId], references: [id])
+  expiresAt DateTime
+  playEvents PlayEvent[]
+  createdAt DateTime @default(now())
+  @@index([videoId, expiresAt])
+}
+
+model PlayEvent {
+  id String @id @default(cuid())
+  playbackSessionId String
+  playbackSession PlaybackSession @relation(fields: [playbackSessionId], references: [id], onDelete: Cascade)
+  videoId String
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  eventType String
+  ipHash String?
+  createdAt DateTime @default(now())
+  @@unique([playbackSessionId, eventType])
+}
+
+model BandwidthDaily {
+  id String @id @default(cuid())
+  date DateTime @db.Date
+  videoId String?
+  video Video? @relation(fields: [videoId], references: [id])
+  allowedDomainId String?
+  allowedDomain AllowedDomain? @relation(fields: [allowedDomainId], references: [id])
+  bytesServed BigInt @default(0)
+  requestCount Int @default(0)
+  playCount Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([date, videoId, allowedDomainId])
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+  actorUserId String?
+  action String
+  entityType String
+  entityId String?
+  metadataJson Json
+  ipHash String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+  @@index([actorUserId, createdAt])
+}
+
+model AuthRateLimit {
+  key String @id
+  failures Int @default(0)
+  windowStartedAt DateTime @default(now())
+  blockedUntil DateTime?
+  updatedAt DateTime @updatedAt
+  @@index([blockedUntil])
+}
