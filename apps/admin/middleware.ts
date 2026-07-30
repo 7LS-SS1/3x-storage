@@ -36,6 +36,17 @@ function webOrigin(value: string | undefined) {
   }
 }
 
+function embedAncestor(request: NextRequest) {
+  const referer = request.headers.get("referer");
+  if (!referer) return "'none'";
+  const url = webOrigin(referer);
+  if (!url) return "'none'";
+  if (process.env.NODE_ENV === "production" && url.protocol !== "https:") {
+    return "'none'";
+  }
+  return url.origin;
+}
+
 export function resolveStorageOrigin(
   environment: StorageEnvironment = process.env as StorageEnvironment
 ) {
@@ -76,6 +87,7 @@ function cookieName() {
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const isEmbed = pathname.startsWith("/embed/");
   const isProtected = protectedPrefixes.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`));
   const token = request.cookies.get(cookieName())?.value;
   if (isProtected && (!token || !TOKEN_PATTERN.test(token))) {
@@ -91,15 +103,17 @@ export function middleware(request: NextRequest) {
   requestHeaders.set("x-nonce", nonce);
   const storageOrigin = resolveStorageOrigin();
   const storageSource = storageOrigin ? ` ${storageOrigin}` : "";
+  const mediaOrigin = webOrigin(process.env.MEDIA_URL)?.origin;
+  const mediaSource = mediaOrigin ? ` ${mediaOrigin}` : "";
   const csp = [
     "default-src 'self'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
+    `frame-ancestors ${isEmbed ? embedAncestor(request) : "'none'"}`,
     "object-src 'none'",
     "img-src 'self' data: blob: https://*.googleusercontent.com https://*.gstatic.com",
-    `media-src 'self' blob:${storageSource}`,
-    `connect-src 'self'${storageSource} https://www.googleapis.com https://content.googleapis.com https://picker.googleapis.com`,
+    `media-src 'self' blob:${storageSource}${mediaSource}`,
+    `connect-src 'self'${storageSource}${mediaSource} https://www.googleapis.com https://content.googleapis.com https://picker.googleapis.com`,
     "frame-src 'self' https://docs.google.com https://drive.google.com https://accounts.google.com https://picker.googleapis.com",
     "style-src 'self' 'unsafe-inline'",
     `script-src 'self' https://apis.google.com 'nonce-${nonce}' 'strict-dynamic'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
@@ -111,6 +125,15 @@ export function middleware(request: NextRequest) {
   if (isProtected) {
     response.headers.set("Cache-Control", "no-store, max-age=0");
     response.headers.set("Pragma", "no-cache");
+  }
+  if (isEmbed) {
+    response.headers.set("Cache-Control", "private, no-store, max-age=0");
+    response.headers.set("Cross-Origin-Opener-Policy", "unsafe-none");
+    response.headers.set("Cross-Origin-Resource-Policy", "cross-origin");
+  } else {
+    response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+    response.headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    response.headers.set("X-Frame-Options", "DENY");
   }
   response.headers.set("X-Content-Type-Options", "nosniff");
   return response;

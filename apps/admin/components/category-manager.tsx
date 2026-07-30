@@ -35,7 +35,12 @@ const emptyForm: CategoryForm = {
   active: true
 };
 
-export function CategoryManager() {
+export function CategoryManager({
+  role
+}: {
+  role: "SYSTEM" | "ADMIN" | "STAFF";
+}) {
+  const canManageCategories = role !== "STAFF";
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -186,11 +191,15 @@ export function CategoryManager() {
                       </span>
                     </td>
                     <td>
-                      <div className="row-actions">
-                        <button aria-label="แก้ไขหมวดหมู่" onClick={() => openEdit(category)} type="button"><Pencil /></button>
-                        <button aria-label="เปลี่ยนสถานะหมวดหมู่" disabled={working} onClick={() => void toggle(category)} type="button"><Power /></button>
-                        <button aria-label="ลบหมวดหมู่" className="danger-action" disabled={working || category.videoCount > 0} onClick={() => void remove(category)} type="button"><Trash2 /></button>
-                      </div>
+                      {canManageCategories ? (
+                        <div className="row-actions">
+                          <button aria-label="แก้ไขหมวดหมู่" onClick={() => openEdit(category)} type="button"><Pencil /></button>
+                          <button aria-label="เปลี่ยนสถานะหมวดหมู่" disabled={working} onClick={() => void toggle(category)} type="button"><Power /></button>
+                          <button aria-label="ลบหมวดหมู่" className="danger-action" disabled={working || category.videoCount > 0} onClick={() => void remove(category)} type="button"><Trash2 /></button>
+                        </div>
+                      ) : (
+                        <span>—</span>
+                      )}
                     </td>
                   </tr>
                 ))}

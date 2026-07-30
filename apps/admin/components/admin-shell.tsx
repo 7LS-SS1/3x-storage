@@ -82,9 +82,13 @@ export function AdminShell({
   ];
   const managementNav = [
     { href: "/categories", label: "หมวดหมู่วิดีโอ", icon: Tags },
-    { href: "/users", label: "ผู้ใช้งาน", icon: Users },
-    { href: "/domains", label: "โดเมนที่อนุญาต", icon: ShieldCheck },
-    { href: "/audit", label: "บันทึกกิจกรรม", icon: Activity },
+    ...(user.role !== "STAFF"
+      ? [
+          { href: "/users", label: "ผู้ใช้งาน", icon: Users },
+          { href: "/domains", label: "โดเมนที่อนุญาต", icon: ShieldCheck },
+          { href: "/audit", label: "บันทึกกิจกรรม", icon: Activity }
+        ]
+      : []),
     ...(user.role === "SYSTEM"
       ? [{ href: "/settings", label: "ตั้งค่าระบบ", icon: Settings }]
       : [])
@@ -124,25 +128,21 @@ export function AdminShell({
               </Link>
             );
           })}
-          {user.role !== "STAFF" && (
-            <>
-              <span>การจัดการ</span>
-              {managementNav.map(item => {
-                const Icon = item.icon;
-                const active =
-                  pathname === item.href || pathname.startsWith(`${item.href}/`);
-                return (
-                  <Link
-                    className={active ? "active" : ""}
-                    href={item.href}
-                    key={item.href}
-                  >
-                    <Icon />{item.label}
-                  </Link>
-                );
-              })}
-            </>
-          )}
+          <span>การจัดการ</span>
+          {managementNav.map(item => {
+            const Icon = item.icon;
+            const active =
+              pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                className={active ? "active" : ""}
+                href={item.href}
+                key={item.href}
+              >
+                <Icon />{item.label}
+              </Link>
+            );
+          })}
         </nav>
         <div className="storage-meter">
           <div>

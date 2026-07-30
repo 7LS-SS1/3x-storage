@@ -416,11 +416,9 @@ export function VideoLibraryClient({ role }: { role: Role }) {
             <button disabled={working} onClick={applyBulkCategory} type="button">
               เปลี่ยนหมวดหมู่
             </button>
-            {role !== "STAFF" && (
-              <button className="danger-button" disabled={working} onClick={bulkDelete} type="button">
-                <Trash2 />ลบที่เลือก
-              </button>
-            )}
+            <button className="danger-button" disabled={working} onClick={bulkDelete} type="button">
+              <Trash2 />ลบที่เลือก
+            </button>
             <button className="icon-button" onClick={() => setSelected(new Set())} type="button">
               <X />
             </button>
@@ -507,17 +505,15 @@ export function VideoLibraryClient({ role }: { role: Role }) {
                           <button onClick={() => openEdit(video)} title="แก้ไข" type="button">
                             <Pencil /><span>แก้ไข</span>
                           </button>
-                          {role !== "STAFF" && (
-                            <button
-                              className="danger-action"
-                              disabled={working}
-                              onClick={() => void deleteVideo(video)}
-                              title="ลบ"
-                              type="button"
-                            >
-                              <Trash2 /><span>ลบ</span>
-                            </button>
-                          )}
+                          <button
+                            className="danger-action"
+                            disabled={working}
+                            onClick={() => void deleteVideo(video)}
+                            title="ลบ"
+                            type="button"
+                          >
+                            <Trash2 /><span>ลบ</span>
+                          </button>
                         </div>
                       </td>
                     </tr>

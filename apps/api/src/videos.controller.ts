@@ -391,9 +391,6 @@ export class VideosController {
 
   @Delete(":id")
   async remove(@Req() request: AdminRequest, @Param("id") id: string) {
-    if (!canManageAllVideos(request.auth.user.role)) {
-      throw new ConflictException("บัญชี STAFF ไม่มีสิทธิ์ลบวิดีโอ");
-    }
     const result = await this.deleteOne(id, request.auth.user);
     if (!result.success) throw new ConflictException(result.error);
     return { deleted: true };
@@ -434,9 +431,6 @@ export class VideosController {
 
   @Post("bulk/delete")
   async bulkDelete(@Req() request: AdminRequest, @Body() body: unknown) {
-    if (!canManageAllVideos(request.auth.user.role)) {
-      throw new ConflictException("บัญชี STAFF ไม่มีสิทธิ์ลบวิดีโอ");
-    }
     const parsed = bulkDeleteSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("รายการวิดีโอที่ต้องการลบไม่ถูกต้อง");
     const videoIds = [...new Set(parsed.data.videoIds)];

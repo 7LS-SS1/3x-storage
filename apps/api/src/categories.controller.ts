@@ -87,7 +87,6 @@ export class CategoriesController {
 
   @Post()
   async create(@Req() request: AdminRequest, @Body() body: unknown) {
-    this.assertManager(request);
     const parsed = createSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("ข้อมูลหมวดหมู่ไม่ถูกต้อง");
     const slug = slugify(parsed.data.slug || parsed.data.name);

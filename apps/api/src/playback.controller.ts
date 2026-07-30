@@ -10,6 +10,10 @@ const authorizeSchema = z.object({
   videoPublicId: z.string().min(10).max(128),
   fileId: z.string().min(10).max(128)
 }).strict();
+const refreshSchema = z.object({
+  playbackSessionId: z.string().uuid(),
+  eventToken: z.string().regex(/^[a-f0-9]{64}$/i)
+}).strict();
 const eventSchema = z.object({
   playbackSessionId: z.string().uuid(),
   eventType: z.literal("play_started"),
@@ -30,6 +34,58 @@ function hmac(value: string, secret: string) {
 function safeHexEqual(left: string, right: string) {
   if (!/^[a-f0-9]{64}$/i.test(left) || !/^[a-f0-9]{64}$/i.test(right)) return false;
   return timingSafeEqual(Buffer.from(left, "hex"), Buffer.from(right, "hex"));
+}
+
+function playbackTtlSeconds() {
+  return Math.min(Math.max(Number(process.env.MEDIA_URL_TTL_SECONDS || 600), 300), 900);
+}
+
+function playbackGrant(input: {
+  videoPublicId: string;
+  fileId: string;
+  storageKey: string;
+  sessionId: string;
+  expires: number;
+}) {
+  const mediaSecret = requiredSecret("MEDIA_SIGNING_SECRET");
+  const mediaBaseUrl = process.env.MEDIA_URL;
+  if (!mediaBaseUrl) {
+    throw new ServiceUnavailableException("ระบบส่งมอบวิดีโอยังไม่พร้อมใช้งาน");
+  }
+  let base: URL;
+  try {
+    base = new URL(mediaBaseUrl);
+  } catch {
+    throw new ServiceUnavailableException("ระบบส่งมอบวิดีโอยังไม่พร้อมใช้งาน");
+  }
+  if (process.env.NODE_ENV === "production" && base.protocol !== "https:") {
+    throw new ServiceUnavailableException("ระบบส่งมอบวิดีโอยังไม่พร้อมใช้งาน");
+  }
+
+  const claims = {
+    path: input.storageKey,
+    expires: input.expires,
+    sessionId: input.sessionId,
+    videoId: input.videoPublicId,
+    fileId: input.fileId
+  };
+  const signature = signMedia(claims, mediaSecret);
+  const mediaUrl = new URL(
+    input.storageKey.split("/").map(encodeURIComponent).join("/"),
+    `${base.toString().replace(/\/?$/, "/")}`
+  );
+  Object.entries({
+    expires: String(input.expires),
+    sessionId: input.sessionId,
+    videoId: input.videoPublicId,
+    fileId: input.fileId,
+    signature
+  }).forEach(([key, value]) => mediaUrl.searchParams.set(key, value));
+  const eventToken = hmac(
+    ["play_event", input.sessionId, input.videoPublicId, input.expires].join("\n"),
+    mediaSecret
+  );
+  return { mediaUrl: mediaUrl.toString(), eventToken };
 }
 
 function refererHost(referer: string | undefined) {
@@ -82,23 +138,15 @@ export class PlaybackController {
       throw new ForbiddenException("โดเมนนี้ไม่ได้รับอนุญาตให้เล่นวิดีโอ");
     }
 
-    const mediaSecret = requiredSecret("MEDIA_SIGNING_SECRET");
-    const mediaBaseUrl = process.env.MEDIA_URL;
-    if (!mediaBaseUrl) throw new ServiceUnavailableException("ระบบส่งมอบวิดีโอยังไม่พร้อมใช้งาน");
-    let base: URL;
-    try { base = new URL(mediaBaseUrl); } catch { throw new ServiceUnavailableException("ระบบส่งมอบวิดีโอยังไม่พร้อมใช้งาน"); }
-    if (process.env.NODE_ENV === "production" && base.protocol !== "https:") {
-      throw new ServiceUnavailableException("ระบบส่งมอบวิดีโอยังไม่พร้อมใช้งาน");
-    }
-
-    const ttl = Math.min(Math.max(Number(process.env.MEDIA_URL_TTL_SECONDS || 600), 300), 900);
-    const expires = Math.floor(Date.now() / 1000) + ttl;
+    const expires = Math.floor(Date.now() / 1000) + playbackTtlSeconds();
     const sessionId = randomUUID();
-    const claims = { path: file.storageKey, expires, sessionId, videoId: video.publicId, fileId: file.id };
-    const signature = signMedia(claims, mediaSecret);
-    const mediaUrl = new URL(file.storageKey.split("/").map(encodeURIComponent).join("/"), `${base.toString().replace(/\/?$/, "/")}`);
-    Object.entries({ expires: String(expires), sessionId, videoId: video.publicId, fileId: file.id, signature }).forEach(([key, value]) => mediaUrl.searchParams.set(key, value));
-    const eventToken = hmac(["play_event", sessionId, video.publicId, expires].join("\n"), mediaSecret);
+    const grant = playbackGrant({
+      videoPublicId: video.publicId,
+      fileId: file.id,
+      storageKey: file.storageKey,
+      sessionId,
+      expires
+    });
 
     await this.prisma.playbackSession.create({
       data: {
@@ -110,7 +158,78 @@ export class PlaybackController {
     });
     response.setHeader("Content-Security-Policy", `frame-ancestors https://${host}`);
     response.setHeader("Cache-Control", "no-store");
-    return { playbackSessionId: sessionId, expires, mediaUrl: mediaUrl.toString(), eventToken };
+    return { playbackSessionId: sessionId, expires, ...grant };
+  }
+
+  @Post("refresh")
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async refresh(
+    @Body() untrustedBody: unknown,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const parsed = refreshSchema.safeParse(untrustedBody);
+    if (!parsed.success) {
+      throw new ForbiddenException("คำขอต่ออายุสิทธิ์รับชมไม่ถูกต้อง");
+    }
+    const session = await this.prisma.playbackSession.findUnique({
+      where: { id: parsed.data.playbackSessionId },
+      select: {
+        id: true,
+        expiresAt: true,
+        createdAt: true,
+        allowedDomain: { select: { active: true } },
+        video: {
+          select: {
+            publicId: true,
+            status: true,
+            deletedAt: true,
+            files: {
+              where: { role: "PLAYBACK" },
+              orderBy: { createdAt: "desc" },
+              select: { id: true, storageKey: true },
+              take: 1
+            }
+          }
+        }
+      }
+    });
+    const previousExpires = session
+      ? Math.floor(session.expiresAt.getTime() / 1000)
+      : 0;
+    const expected = session
+      ? hmac(
+          ["play_event", session.id, session.video.publicId, previousExpires].join("\n"),
+          requiredSecret("MEDIA_SIGNING_SECRET")
+        )
+      : "";
+    const maximumSessionAgeMs = 8 * 60 * 60 * 1000;
+    const file = session?.video.files[0];
+    if (
+      !session ||
+      !safeHexEqual(parsed.data.eventToken, expected) ||
+      Date.now() - session.createdAt.getTime() > maximumSessionAgeMs ||
+      !session.allowedDomain.active ||
+      session.video.status !== "READY" ||
+      session.video.deletedAt ||
+      !file
+    ) {
+      throw new ForbiddenException("สิทธิ์รับชมหมดอายุ กรุณาโหลดหน้าใหม่");
+    }
+
+    const expires = Math.floor(Date.now() / 1000) + playbackTtlSeconds();
+    const grant = playbackGrant({
+      videoPublicId: session.video.publicId,
+      fileId: file.id,
+      storageKey: file.storageKey,
+      sessionId: session.id,
+      expires
+    });
+    await this.prisma.playbackSession.update({
+      where: { id: session.id },
+      data: { expiresAt: new Date(expires * 1000) }
+    });
+    response.setHeader("Cache-Control", "no-store");
+    return { playbackSessionId: session.id, expires, ...grant };
   }
 
   @Post("events")
