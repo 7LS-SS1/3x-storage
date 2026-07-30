@@ -62,12 +62,12 @@ export class PlaybackController {
         publicId: parsed.data.videoPublicId,
         status: "READY",
         deletedAt: null,
-        files: { some: { id: parsed.data.fileId, kind: "PLAYBACK" } }
+        files: { some: { id: parsed.data.fileId, role: "PLAYBACK" } }
       },
       select: {
         id: true,
         publicId: true,
-        files: { where: { id: parsed.data.fileId, kind: "PLAYBACK" }, select: { id: true, storageKey: true }, take: 1 },
+        files: { where: { id: parsed.data.fileId, role: "PLAYBACK" }, select: { id: true, storageKey: true }, take: 1 },
         allowedDomains: {
           where: { allowedDomain: { active: true } },
           select: { allowedDomain: { select: { id: true, hostname: true, includeSubdomains: true } } }

@@ -16,199 +16,363 @@ enum Role {
 
 enum VideoStatus {
   UPLOADING
+  UPLOADED
+  INSPECTING
   PROCESSING
   READY
+  UNPLAYABLE
   FAILED
+  DELETING
   DELETED
 }
 
 enum UploadStatus {
   INITIATED
   UPLOADING
+  COMPLETING
   COMPLETED
   ABORTED
   EXPIRED
+  FAILED
+}
+
+enum VideoFileRole {
+  ORIGINAL
+  PLAYBACK
+  POSTER
+  HLS_MANIFEST
+  HLS_SEGMENT
+}
+
+enum ExternalImportStatus {
+  QUEUED
+  VALIDATING
+  TRANSFERRING
+  COMPLETING
+  COMPLETED
+  FAILED
+  CANCELLED
 }
 
 model User {
-  id String @id @default(cuid())
-  email String @unique
-  name String
-  passwordHash String
-  role Role @default(STAFF)
-  active Boolean @default(true)
-  failedLoginCount Int @default(0)
-  lockedUntil DateTime?
-  lastLoginAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  sessions Session[]
-  videos Video[] @relation("Uploader")
+  id                    String                 @id @default(cuid())
+  email                 String                 @unique
+  name                  String
+  passwordHash          String
+  role                  Role                   @default(STAFF)
+  active                Boolean                @default(true)
+  failedLoginCount      Int                    @default(0)
+  lockedUntil           DateTime?
+  lastLoginAt           DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  sessions              Session[]
+  videos                Video[]                @relation("Uploader")
+  uploadSessions        UploadSession[]        @relation("UploadOwner")
+  systemConfigsUpdated  SystemConfig[]         @relation("SystemConfigUpdater")
+  googleDriveConnection GoogleDriveConnection?
+  externalOAuthStates   ExternalOAuthState[]
+  googleDriveImports    GoogleDriveImport[]    @relation("GoogleDriveImportOwner")
 }
 
 model Session {
-  id String @id @default(cuid())
-  tokenHash String @unique
-  csrfHash String
-  expiresAt DateTime
+  id                String    @id @default(cuid())
+  tokenHash         String    @unique
+  csrfHash          String
+  expiresAt         DateTime
   absoluteExpiresAt DateTime
-  lastSeenAt DateTime @default(now())
-  revokedAt DateTime?
-  userAgentHash String?
-  ipHash String?
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  lastSeenAt        DateTime  @default(now())
+  revokedAt         DateTime?
+  userAgentHash     String?
+  ipHash            String?
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime  @default(now())
+
   @@index([userId, expiresAt, revokedAt])
   @@index([absoluteExpiresAt])
 }
 
 model Category {
-  id String @id @default(cuid())
-  name String @unique
-  slug String @unique
-  active Boolean @default(true)
-  videos Video[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                      String              @id @default(cuid())
+  name                    String              @unique
+  slug                    String              @unique
+  description             String?
+  active                  Boolean             @default(true)
+  videos                  Video[]
+  defaultForSystemConfigs SystemConfig[]
+  googleDriveImports      GoogleDriveImport[]
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+}
+
+model SystemConfig {
+  id                    Int       @id @default(1)
+  siteName              String    @default("สนามคลาวด์")
+  uploadsEnabled        Boolean   @default(true)
+  defaultCategoryId     String?
+  defaultCategory       Category? @relation(fields: [defaultCategoryId], references: [id], onDelete: SetNull)
+  supportEmail          String?
+  storageWarningPercent Int       @default(85)
+  updatedById           String?
+  updatedBy             User?     @relation("SystemConfigUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([defaultCategoryId])
+  @@index([updatedById])
 }
 
 model Video {
-  id String @id @default(cuid())
-  publicId String @unique @default(cuid())
-  title String
-  description String?
-  status VideoStatus @default(UPLOADING)
-  fileSize BigInt?
-  durationSeconds Float?
-  width Int?
-  height Int?
-  mimeType String?
-  originalKey String?
-  playbackKey String?
-  posterKey String?
-  playCount Int @default(0)
-  deletedAt DateTime?
-  uploadedById String
-  uploadedBy User @relation("Uploader", fields: [uploadedById], references: [id])
-  categoryId String?
-  category Category? @relation(fields: [categoryId], references: [id])
-  files VideoFile[]
-  uploadSessions UploadSession[]
-  playbackSessions PlaybackSession[]
-  playEvents PlayEvent[]
-  allowedDomains VideoAllowedDomain[]
-  bandwidthDaily BandwidthDaily[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                String               @id @default(cuid())
+  publicId          String               @unique @default(cuid())
+  title             String
+  description       String?
+  status            VideoStatus          @default(UPLOADING)
+  fileSize          BigInt?
+  durationSeconds   Float?
+  width             Int?
+  height            Int?
+  mimeType          String?
+  originalKey       String?
+  playbackKey       String?
+  posterKey         String?
+  playCount         BigInt               @default(0)
+  originalFilename  String?
+  uploadedAt        DateTime?
+  processingError   String?
+  deletedAt         DateTime?
+  uploadedById      String
+  uploadedBy        User                 @relation("Uploader", fields: [uploadedById], references: [id])
+  categoryId        String?
+  category          Category?            @relation(fields: [categoryId], references: [id])
+  files             VideoFile[]
+  uploadSessions    UploadSession[]
+  playbackSessions  PlaybackSession[]
+  playEvents        PlayEvent[]
+  allowedDomains    VideoAllowedDomain[]
+  bandwidthDaily    BandwidthDaily[]
+  googleDriveImport GoogleDriveImport?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
   @@index([status, createdAt])
   @@index([categoryId, createdAt])
+  @@index([deletedAt, createdAt])
+}
+
+model GoogleDriveConnection {
+  id                    String              @id @default(cuid())
+  userId                String              @unique
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  googleUserId          String
+  email                 String
+  refreshTokenEncrypted String
+  grantedScopes         String[]
+  imports               GoogleDriveImport[]
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+}
+
+model ExternalOAuthState {
+  id                    String    @id @default(cuid())
+  provider              String
+  stateHash             String    @unique
+  codeVerifierEncrypted String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt             DateTime
+  usedAt                DateTime?
+  createdAt             DateTime  @default(now())
+
+  @@index([userId, provider, expiresAt])
+  @@index([expiresAt, usedAt])
+}
+
+model GoogleDriveImport {
+  id               String                 @id @default(cuid())
+  userId           String
+  user             User                   @relation("GoogleDriveImportOwner", fields: [userId], references: [id], onDelete: Restrict)
+  connectionId     String?
+  connection       GoogleDriveConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  googleFileId     String
+  headRevisionId   String?
+  sourceModifiedAt DateTime?
+  md5Checksum      String?
+  filename         String
+  title            String
+  mimeType         String
+  sizeBytes        BigInt
+  categoryId       String?
+  category         Category?              @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  videoId          String                 @unique
+  video            Video                  @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  fileId           String                 @unique
+  storageKey       String                 @unique
+  storageUploadId  String?                @unique
+  status           ExternalImportStatus   @default(QUEUED)
+  progress         Int                    @default(0)
+  transferredBytes BigInt                 @default(0)
+  attempts         Int                    @default(0)
+  errorCode        String?
+  errorMessage     String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([connectionId, googleFileId, sourceModifiedAt])
+  @@index([status, updatedAt])
 }
 
 model VideoFile {
-  id String @id @default(cuid())
-  videoId String
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  kind String
-  storageKey String @unique
-  mimeType String
-  size BigInt
-  checksum String?
-  createdAt DateTime @default(now())
+  id         String        @id
+  videoId    String
+  video      Video         @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  role       VideoFileRole
+  storageKey String        @unique
+  filename   String
+  extension  String
+  mimeType   String
+  container  String?
+  videoCodec String?
+  audioCodec String?
+  sizeBytes  BigInt
+  width      Int?
+  height     Int?
+  bitrate    BigInt?
+  checksum   String?
+  createdAt  DateTime      @default(now())
+
+  @@index([videoId, role])
 }
 
 model UploadSession {
-  id String @id @default(cuid())
-  videoId String
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  storageUploadId String @unique
-  storageKey String
-  status UploadStatus @default(INITIATED)
-  expiresAt DateTime
-  completedAt DateTime?
-  createdAt DateTime @default(now())
+  id               String       @id @default(cuid())
+  videoId          String
+  video            Video        @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  uploadedById     String
+  uploadedBy       User         @relation("UploadOwner", fields: [uploadedById], references: [id], onDelete: Restrict)
+  fileId           String       @unique
+  storageUploadId  String       @unique
+  storageKey       String
+  originalFilename String
+  extension        String
+  mimeType         String
+  sizeBytes        BigInt
+  partSizeBytes    Int
+  expectedParts    Int
+  status           UploadStatus @default(INITIATED)
+  expiresAt        DateTime
+  completedAt      DateTime?
+  failureReason    String?
+  parts            UploadPart[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
   @@index([status, expiresAt])
+  @@index([uploadedById, createdAt])
+}
+
+model UploadPart {
+  id              String        @id @default(cuid())
+  uploadSessionId String
+  uploadSession   UploadSession @relation(fields: [uploadSessionId], references: [id], onDelete: Cascade)
+  partNumber      Int
+  etag            String
+  sizeBytes       Int?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([uploadSessionId, partNumber])
 }
 
 model AllowedDomain {
-  id String @id @default(cuid())
-  hostname String @unique
-  includeSubdomains Boolean @default(false)
-  active Boolean @default(true)
-  playbackSessions PlaybackSession[]
-  bandwidthDaily BandwidthDaily[]
-  videos VideoAllowedDomain[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                String               @id @default(cuid())
+  hostname          String               @unique
+  includeSubdomains Boolean              @default(false)
+  active            Boolean              @default(true)
+  playbackSessions  PlaybackSession[]
+  bandwidthDaily    BandwidthDaily[]
+  videos            VideoAllowedDomain[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
 }
 
 model VideoAllowedDomain {
-  videoId String
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  videoId         String
+  video           Video         @relation(fields: [videoId], references: [id], onDelete: Cascade)
   allowedDomainId String
-  allowedDomain AllowedDomain @relation(fields: [allowedDomainId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  allowedDomain   AllowedDomain @relation(fields: [allowedDomainId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+
   @@id([videoId, allowedDomainId])
 }
 
 model PlaybackSession {
-  id String @id
-  videoId String
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  id              String        @id
+  videoId         String
+  video           Video         @relation(fields: [videoId], references: [id], onDelete: Cascade)
   allowedDomainId String
-  allowedDomain AllowedDomain @relation(fields: [allowedDomainId], references: [id])
-  expiresAt DateTime
-  playEvents PlayEvent[]
-  createdAt DateTime @default(now())
+  allowedDomain   AllowedDomain @relation(fields: [allowedDomainId], references: [id])
+  expiresAt       DateTime
+  playEvents      PlayEvent[]
+  createdAt       DateTime      @default(now())
+
   @@index([videoId, expiresAt])
 }
 
 model PlayEvent {
-  id String @id @default(cuid())
+  id                String          @id @default(cuid())
   playbackSessionId String
-  playbackSession PlaybackSession @relation(fields: [playbackSessionId], references: [id], onDelete: Cascade)
-  videoId String
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  eventType String
-  ipHash String?
-  createdAt DateTime @default(now())
+  playbackSession   PlaybackSession @relation(fields: [playbackSessionId], references: [id], onDelete: Cascade)
+  videoId           String
+  video             Video           @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  eventType         String
+  ipHash            String?
+  createdAt         DateTime        @default(now())
+
   @@unique([playbackSessionId, eventType])
 }
 
 model BandwidthDaily {
-  id String @id @default(cuid())
-  date DateTime @db.Date
-  videoId String?
-  video Video? @relation(fields: [videoId], references: [id])
+  id              String         @id @default(cuid())
+  date            DateTime       @db.Date
+  videoId         String?
+  video           Video?         @relation(fields: [videoId], references: [id])
   allowedDomainId String?
-  allowedDomain AllowedDomain? @relation(fields: [allowedDomainId], references: [id])
-  bytesServed BigInt @default(0)
-  requestCount Int @default(0)
-  playCount Int @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  allowedDomain   AllowedDomain? @relation(fields: [allowedDomainId], references: [id])
+  bytesServed     BigInt         @default(0)
+  requestCount    Int            @default(0)
+  playCount       Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
   @@unique([date, videoId, allowedDomainId])
 }
 
 model AuditLog {
-  id String @id @default(cuid())
-  actorUserId String?
-  action String
-  entityType String
-  entityId String?
+  id           String   @id @default(cuid())
+  actorUserId  String?
+  action       String
+  entityType   String
+  entityId     String?
   metadataJson Json
-  ipHash String?
-  userAgent String?
-  createdAt DateTime @default(now())
+  ipHash       String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
   @@index([createdAt])
   @@index([actorUserId, createdAt])
 }
 
 model AuthRateLimit {
-  key String @id
-  failures Int @default(0)
-  windowStartedAt DateTime @default(now())
-  blockedUntil DateTime?
-  updatedAt DateTime @updatedAt
+  key             String    @id
+  failures        Int       @default(0)
+  windowStartedAt DateTime  @default(now())
+  blockedUntil    DateTime?
+  updatedAt       DateTime  @updatedAt
+
   @@index([blockedUntil])
 }

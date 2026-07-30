@@ -3,7 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2025-07-22"
 [[r2_buckets]]
 binding = "VIDEOS"
-bucket_name = "private-videos"
+bucket_name = "3xapi"
 [[analytics_engine_datasets]]
 binding = "MEDIA_ANALYTICS"
 dataset = "media_delivery"

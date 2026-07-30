@@ -1,6 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { middleware } from "./middleware";
+import { middleware, resolveStorageOrigin } from "./middleware";
+
+describe("storage content security policy", () => {
+  it("resolves the exact virtual-hosted R2 bucket origin", () => {
+    expect(resolveStorageOrigin({
+      STORAGE_DRIVER: "r2",
+      R2_ACCOUNT_ID: "account-id",
+      R2_BUCKET: "3xapi",
+      R2_S3_ENDPOINT: "https://account-id.r2.cloudflarestorage.com"
+    })).toBe("https://3xapi.account-id.r2.cloudflarestorage.com");
+  });
+
+  it("rejects an invalid R2 bucket name instead of weakening CSP", () => {
+    expect(resolveStorageOrigin({
+      STORAGE_DRIVER: "r2",
+      R2_BUCKET: "3xapi; https://attacker.invalid",
+      R2_S3_ENDPOINT: "https://account-id.r2.cloudflarestorage.com"
+    })).toBeNull();
+  });
+
+  it("uses the exact endpoint origin for path-style MinIO", () => {
+    expect(resolveStorageOrigin({
+      STORAGE_DRIVER: "s3",
+      S3_BUCKET: "videos",
+      S3_ENDPOINT: "http://localhost:9000",
+      S3_FORCE_PATH_STYLE: "true"
+    })).toBe("http://localhost:9000");
+  });
+});
 
 describe("authentication middleware", () => {
   it("rejects a missing session on protected routes", () => {
@@ -30,5 +58,17 @@ describe("authentication middleware", () => {
     const response = middleware(new NextRequest("http://localhost:3000/login"));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+  });
+
+  it("allows only the Google Picker origins required by Drive import", () => {
+    const request = new NextRequest("http://localhost:3000/upload", {
+      headers: { cookie: `video_session=${"a".repeat(43)}` }
+    });
+    const policy = middleware(request).headers.get("content-security-policy");
+    expect(policy).toContain(
+      "frame-src 'self' https://docs.google.com https://drive.google.com https://accounts.google.com https://picker.googleapis.com"
+    );
+    expect(policy).toContain("https://www.googleapis.com");
+    expect(policy).not.toContain("frame-src *");
   });
 });

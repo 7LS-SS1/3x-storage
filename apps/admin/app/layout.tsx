@@ -11,5 +11,11 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="th"><body className={thai.variable}>{children}</body></html>;
+  return (
+    <html lang="th">
+      <body className={thai.variable} suppressHydrationWarning>
+        {children}
+      </body>
+    </html>
+  );
 }

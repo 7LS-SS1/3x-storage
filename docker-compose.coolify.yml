@@ -1,0 +1,224 @@
+x-database-environment: &database-environment
+  DATABASE_URL: ${DATABASE_URL:?Set the Coolify PostgreSQL internal URL}
+  DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL:?Set the direct Coolify PostgreSQL URL}
+
+x-public-environment: &public-environment
+  APP_URL: ${APP_URL:?Set the public HTTPS admin URL}
+  ADMIN_URL: ${ADMIN_URL:?Set the public HTTPS admin URL}
+  PLAYER_URL: ${PLAYER_URL:?Set the public HTTPS player URL}
+  MEDIA_URL: ${MEDIA_URL:?Set the Cloudflare media Worker HTTPS URL}
+
+x-security-environment: &security-environment
+  SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-__Host-video_session}
+  SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-3600}
+  SESSION_ABSOLUTE_TTL_SECONDS: ${SESSION_ABSOLUTE_TTL_SECONDS:-28800}
+  SESSION_SECRET: ${SESSION_SECRET:?Generate a random 256-bit secret}
+  CSRF_SECRET: ${CSRF_SECRET:?Generate a different random 256-bit secret}
+  IP_HASH_SALT: ${IP_HASH_SALT:?Generate a different random 256-bit secret}
+  MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?Use the same secret configured on the Cloudflare media Worker}
+
+x-r2-public-environment: &r2-public-environment
+  STORAGE_DRIVER: r2
+  R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:?Set the Cloudflare account ID}
+  R2_BUCKET: ${R2_BUCKET:?Set the R2 bucket name}
+  R2_S3_ENDPOINT: ${R2_S3_ENDPOINT:-}
+
+x-r2-private-environment: &r2-private-environment
+  R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?Set a bucket-scoped R2 access key}
+  R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?Set the matching R2 secret key}
+
+x-google-environment: &google-environment
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-}
+  GOOGLE_PICKER_API_KEY: ${GOOGLE_PICKER_API_KEY:-}
+  GOOGLE_CLOUD_PROJECT_NUMBER: ${GOOGLE_CLOUD_PROJECT_NUMBER:-}
+  GOOGLE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_TOKEN_ENCRYPTION_KEY:-}
+
+x-app-security: &app-security
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-app-logging: &app-logging
+  driver: json-file
+  options:
+    max-size: 20m
+    max-file: "5"
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --requirepass
+      - ${REDIS_PASSWORD:?Generate a strong Redis password}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Generate a strong Redis password}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping | grep PONG
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *app-logging
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrate
+    restart: "no"
+    exclude_from_hc: true
+    environment:
+      <<: *database-environment
+      NODE_ENV: production
+    logging: *app-logging
+
+  bootstrap-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrate
+    restart: "no"
+    exclude_from_hc: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *database-environment
+      NODE_ENV: production
+      BOOTSTRAP_SYSTEM_EMAIL: ${BOOTSTRAP_SYSTEM_EMAIL:-}
+      BOOTSTRAP_SYSTEM_NAME: ${BOOTSTRAP_SYSTEM_NAME:-}
+      BOOTSTRAP_SYSTEM_PASSWORD: ${BOOTSTRAP_SYSTEM_PASSWORD:-}
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - >-
+        if [ -z "$$BOOTSTRAP_SYSTEM_EMAIL" ]; then
+          echo "SYSTEM administrator bootstrap skipped.";
+          exit 0;
+        fi;
+        exec ./node_modules/.bin/tsx prisma/bootstrap-admin.ts
+    logging: *app-logging
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<:
+        - *database-environment
+        - *public-environment
+        - *security-environment
+        - *r2-public-environment
+        - *r2-private-environment
+        - *google-environment
+      NODE_ENV: production
+      PORT: 4000
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Generate a strong Redis password}@redis:6379/0
+      TRUST_PROXY: "true"
+      ENABLE_API_DOCS: "false"
+      STORAGE_CAPACITY_BYTES: ${STORAGE_CAPACITY_BYTES:-}
+      MEDIA_URL_TTL_SECONDS: ${MEDIA_URL_TTL_SECONDS:-600}
+      UPLOAD_MAX_FILE_BYTES: ${UPLOAD_MAX_FILE_BYTES:-10737418240}
+      UPLOAD_MULTIPART_THRESHOLD_BYTES: ${UPLOAD_MULTIPART_THRESHOLD_BYTES:-104857600}
+      UPLOAD_PART_SIZE_BYTES: ${UPLOAD_PART_SIZE_BYTES:-67108864}
+      UPLOAD_URL_TTL_SECONDS: ${UPLOAD_URL_TTL_SECONDS:-900}
+      UPLOAD_SESSION_TTL_SECONDS: ${UPLOAD_SESSION_TTL_SECONDS:-86400}
+      UPLOAD_MAX_CONCURRENT_FILES: ${UPLOAD_MAX_CONCURRENT_FILES:-3}
+      UPLOAD_MAX_CONCURRENT_PARTS: ${UPLOAD_MAX_CONCURRENT_PARTS:-4}
+    expose:
+      - "4000"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    <<: *app-security
+    logging: *app-logging
+    stop_grace_period: 30s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<:
+        - *database-environment
+        - *r2-public-environment
+        - *r2-private-environment
+        - *google-environment
+      NODE_ENV: production
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Generate a strong Redis password}@redis:6379/0
+      UPLOAD_PART_SIZE_BYTES: ${UPLOAD_PART_SIZE_BYTES:-67108864}
+      DRIVE_IMPORT_CONCURRENCY: ${DRIVE_IMPORT_CONCURRENCY:-2}
+      MEDIA_TRANSCODE_MODE: ${MEDIA_TRANSCODE_MODE:-auto}
+      MEDIA_VIDEO_CRF: ${MEDIA_VIDEO_CRF:-23}
+      MEDIA_VIDEO_PRESET: ${MEDIA_VIDEO_PRESET:-medium}
+      MEDIA_AUDIO_BITRATE: ${MEDIA_AUDIO_BITRATE:-128k}
+      MEDIA_MAX_WIDTH: ${MEDIA_MAX_WIDTH:-1920}
+      WORKER_TMP_DIR: /tmp/video-worker
+    volumes:
+      - worker_tmp:/tmp/video-worker
+    <<: *app-security
+    logging: *app-logging
+    stop_grace_period: 2m
+
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: admin
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      bootstrap-admin:
+        condition: service_completed_successfully
+    environment:
+      <<:
+        - *database-environment
+        - *public-environment
+        - *security-environment
+        - *r2-public-environment
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      API_URL: http://api:4000
+      TRUST_PROXY: "true"
+    expose:
+      - "3000"
+    tmpfs:
+      - /app/apps/admin/.next/cache:rw,noexec,nosuid,size=128m
+      - /tmp:rw,noexec,nosuid,size=64m
+    <<: *app-security
+    logging: *app-logging
+    stop_grace_period: 30s
+
+volumes:
+  redis_data:
+  worker_tmp:
+

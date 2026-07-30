@@ -9,9 +9,12 @@
     "typecheck": "corepack pnpm -r --if-present run typecheck",
     "test": "corepack pnpm -r --if-present run test",
     "test:e2e": "corepack pnpm --filter @video/admin test:e2e",
+    "env:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-env.ps1",
+    "secrets:generate": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/new-secrets.ps1",
     "db:generate": "corepack pnpm --filter @video/database db:generate",
     "db:migrate": "corepack pnpm --filter @video/database db:migrate",
-    "db:seed": "corepack pnpm --filter @video/database db:seed"
+    "db:seed": "corepack pnpm --filter @video/database db:seed",
+    "admin:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-admin.ps1"
   },
   "devDependencies": {
     "turbo": "^2.5.6",

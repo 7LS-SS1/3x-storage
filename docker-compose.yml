@@ -13,11 +13,24 @@ services:
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
-    environment: { MINIO_ROOT_USER: minio, MINIO_ROOT_PASSWORD: change-this-local-password }
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-change-this-local-password}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${ADMIN_URL:-http://localhost:3000}
     ports: ["9000:9000", "9001:9001"]
     volumes: [minio_data:/data]
   minio-init:
     image: minio/mc:latest
     depends_on: [minio]
-    entrypoint: ["/bin/sh","-c","until mc alias set local http://minio:9000 minio change-this-local-password; do sleep 2; done; mc mb --ignore-existing local/videos"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-change-this-local-password}
+      MINIO_BUCKET: ${S3_BUCKET:-videos}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD";
+        do sleep 2; done;
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
 volumes: { postgres_data: {}, redis_data: {}, minio_data: {} }

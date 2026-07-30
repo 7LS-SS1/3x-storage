@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
+import { size } from "zod/v4";
 
 export function LoginForm() {
   const router = useRouter();
@@ -39,9 +40,9 @@ export function LoginForm() {
   return (
     <main className="login-page">
       <section className="login-brand">
-        <div className="brand-mark"><span>SC</span></div>
+        <div className="brand-mark"><span>7LS</span></div>
         <div className="eyebrow">SECURE VIDEO OPERATIONS</div>
-        <h1>ทุกเฟรม<br/><em>อยู่ในการควบคุม</em></h1>
+        <h1><em>3X</em><br/>Center Videos<br/>Storage</h1>
         <p>ศูนย์จัดเก็บ เผยแพร่ และวิเคราะห์วิดีโอระดับองค์กร — ปลอดภัยตั้งแต่ต้นทางถึงหน้าจอ</p>
         <div className="trust-row"><ShieldCheck size={18}/> เข้ารหัส • จำกัดโดเมน • ตรวจสอบย้อนหลัง</div>
       </section>
