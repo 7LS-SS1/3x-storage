@@ -12,6 +12,15 @@ type PlaybackGrant = {
   eventToken: string;
 };
 
+type PlayableFile = {
+  id: string;
+  role: string;
+};
+
+function preferredFile(files: PlayableFile[]) {
+  return files.find(file => file.role === "PLAYBACK") ?? files.find(file => file.role === "ORIGINAL");
+}
+
 function EmbedError({ message }: { message: string }) {
   return (
     <main className="embed-page">
@@ -34,20 +43,19 @@ export default async function EmbedPage({
   const video = await prisma.video.findFirst({
     where: {
       publicId,
-      status: "READY",
+      status: { in: ["UPLOADED", "READY"] },
       deletedAt: null
     },
     select: {
       title: true,
       files: {
-        where: { role: "PLAYBACK" },
+        where: { role: { in: ["PLAYBACK", "ORIGINAL"] } },
         orderBy: { createdAt: "desc" },
-        select: { id: true },
-        take: 1
+        select: { id: true, role: true }
       }
     }
   });
-  const file = video?.files[0];
+  const file = video ? preferredFile(video.files) : undefined;
   if (!video || !file) notFound();
 
   const requestHeaders = await headers();

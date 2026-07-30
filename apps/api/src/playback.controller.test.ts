@@ -25,6 +25,54 @@ describe("PlaybackController authorization refresh", () => {
     delete process.env.MEDIA_URL_TTL_SECONDS;
   });
 
+  it("authorizes an uploaded original when no playback rendition exists yet", async () => {
+    const create = vi.fn().mockResolvedValue({});
+    const prisma = {
+      video: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "video-database-id",
+          publicId: "video-public-test",
+          files: [{
+            id: "file-original-test",
+            storageKey: "videos/original/video-test.mp4",
+            role: "ORIGINAL"
+          }],
+          allowedDomains: [{
+            allowedDomain: {
+              id: "allowed-domain-id",
+              hostname: "sports.example.test",
+              includeSubdomains: false
+            }
+          }]
+        })
+      },
+      playbackSession: { create }
+    } as unknown as PrismaService;
+    const controller = new PlaybackController(prisma);
+    const setHeader = vi.fn();
+
+    const result = await controller.authorize(
+      "https://sports.example.test/watch/123",
+      {
+        videoPublicId: "video-public-test",
+        fileId: "file-original-test"
+      },
+      { setHeader } as never
+    );
+
+    expect(result.mediaUrl).toContain(
+      "https://media.example.test/videos/original/video-test.mp4"
+    );
+    expect(create).toHaveBeenCalledWith({
+      data: {
+        id: expect.any(String),
+        videoId: "video-database-id",
+        allowedDomainId: "allowed-domain-id",
+        expiresAt: expect.any(Date)
+      }
+    });
+  });
+
   it("refreshes a valid playback grant and rotates its event token", async () => {
     const sessionId = "11111111-1111-4111-8111-111111111111";
     const videoPublicId = "video-public-test";
@@ -43,7 +91,8 @@ describe("PlaybackController authorization refresh", () => {
             deletedAt: null,
             files: [{
               id: "file-playback-test",
-              storageKey: "videos/playback/video-test.mp4"
+              storageKey: "videos/playback/video-test.mp4",
+              role: "PLAYBACK"
             }]
           }
         }),
@@ -85,7 +134,8 @@ describe("PlaybackController authorization refresh", () => {
             deletedAt: null,
             files: [{
               id: "file-playback-test",
-              storageKey: "videos/playback/video-test.mp4"
+              storageKey: "videos/playback/video-test.mp4",
+              role: "PLAYBACK"
             }]
           }
         })

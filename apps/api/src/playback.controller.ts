@@ -40,6 +40,16 @@ function playbackTtlSeconds() {
   return Math.min(Math.max(Number(process.env.MEDIA_URL_TTL_SECONDS || 600), 300), 900);
 }
 
+type PlayableFile = {
+  id: string;
+  storageKey: string;
+  role: string;
+};
+
+function preferredFile(files: PlayableFile[]) {
+  return files.find(file => file.role === "PLAYBACK") ?? files.find(file => file.role === "ORIGINAL");
+}
+
 function playbackGrant(input: {
   videoPublicId: string;
   fileId: string;
@@ -116,14 +126,26 @@ export class PlaybackController {
     const video = await this.prisma.video.findFirst({
       where: {
         publicId: parsed.data.videoPublicId,
-        status: "READY",
+        status: { in: ["UPLOADED", "READY"] },
         deletedAt: null,
-        files: { some: { id: parsed.data.fileId, role: "PLAYBACK" } }
+        files: {
+          some: {
+            id: parsed.data.fileId,
+            role: { in: ["PLAYBACK", "ORIGINAL"] }
+          }
+        }
       },
       select: {
         id: true,
         publicId: true,
-        files: { where: { id: parsed.data.fileId, role: "PLAYBACK" }, select: { id: true, storageKey: true }, take: 1 },
+        files: {
+          where: {
+            id: parsed.data.fileId,
+            role: { in: ["PLAYBACK", "ORIGINAL"] }
+          },
+          select: { id: true, storageKey: true, role: true },
+          take: 1
+        },
         allowedDomains: {
           where: { allowedDomain: { active: true } },
           select: { allowedDomain: { select: { id: true, hostname: true, includeSubdomains: true } } }
@@ -133,7 +155,7 @@ export class PlaybackController {
     const match = video?.allowedDomains.find(item =>
       domainMatches(host, item.allowedDomain.hostname, item.allowedDomain.includeSubdomains)
     );
-    const file = video?.files[0];
+    const file = video ? preferredFile(video.files) : undefined;
     if (!video || !match || !file) {
       throw new ForbiddenException("โดเมนนี้ไม่ได้รับอนุญาตให้เล่นวิดีโอ");
     }
@@ -184,10 +206,9 @@ export class PlaybackController {
             status: true,
             deletedAt: true,
             files: {
-              where: { role: "PLAYBACK" },
+              where: { role: { in: ["PLAYBACK", "ORIGINAL"] } },
               orderBy: { createdAt: "desc" },
-              select: { id: true, storageKey: true },
-              take: 1
+              select: { id: true, storageKey: true, role: true }
             }
           }
         }
@@ -203,13 +224,13 @@ export class PlaybackController {
         )
       : "";
     const maximumSessionAgeMs = 8 * 60 * 60 * 1000;
-    const file = session?.video.files[0];
+    const file = session ? preferredFile(session.video.files) : undefined;
     if (
       !session ||
       !safeHexEqual(parsed.data.eventToken, expected) ||
       Date.now() - session.createdAt.getTime() > maximumSessionAgeMs ||
       !session.allowedDomain.active ||
-      session.video.status !== "READY" ||
+      !["UPLOADED", "READY"].includes(session.video.status) ||
       session.video.deletedAt ||
       !file
     ) {
