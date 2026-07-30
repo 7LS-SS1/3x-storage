@@ -66,6 +66,19 @@ type UploadConfiguration = {
   partSizeBytes: number;
 };
 
+const maxUploadPartAttempts = 5;
+const uploadPartTimeoutMs = 15 * 60 * 1000;
+
+class UploadPartError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean
+  ) {
+    super(message);
+    this.name = "UploadPartError";
+  }
+}
+
 const allowedExtensions = [
   ".mp4", ".m4v", ".mov", ".webm", ".mkv", ".ts",
   ".m2ts", ".mts", ".mpg", ".mpeg", ".avi", ".ogv"
@@ -98,6 +111,15 @@ function titleFromFilename(filename: string) {
   return filename.slice(0, filename.length - extension.length).slice(0, 200);
 }
 
+function wait(milliseconds: number) {
+  return new Promise(resolve => window.setTimeout(resolve, milliseconds));
+}
+
+function retryDelay(attempt: number) {
+  const exponentialDelay = Math.min(1000 * 2 ** (attempt - 1), 8000);
+  return exponentialDelay + Math.floor(Math.random() * 500);
+}
+
 async function signatureBase64(file: File) {
   const bytes = new Uint8Array(await file.slice(0, 512).arrayBuffer());
   let binary = "";
@@ -116,26 +138,44 @@ function uploadPart(
     const xhr = new XMLHttpRequest();
     register(xhr);
     xhr.open("PUT", url);
+    xhr.timeout = uploadPartTimeoutMs;
     xhr.upload.onprogress = event => {
       if (event.lengthComputable) onProgress(event.loaded);
     };
     xhr.onerror = () => {
       unregister(xhr);
-      reject(new Error("การเชื่อมต่อกับพื้นที่จัดเก็บขัดข้อง กรุณาตรวจ CORS ของ MinIO/R2"));
+      reject(new UploadPartError(
+        "การเชื่อมต่อกับพื้นที่จัดเก็บขาดหายระหว่างส่งข้อมูล ระบบจะลองเชื่อมต่อใหม่",
+        true
+      ));
+    };
+    xhr.ontimeout = () => {
+      unregister(xhr);
+      reject(new UploadPartError(
+        "หมดเวลารอการอัปโหลดส่วนไฟล์ ระบบจะลองส่งส่วนนี้ใหม่",
+        true
+      ));
     };
     xhr.onabort = () => {
       unregister(xhr);
-      reject(new Error("ยกเลิกการอัปโหลดแล้ว"));
+      reject(new UploadPartError("ยกเลิกการอัปโหลดแล้ว", false));
     };
     xhr.onload = () => {
       unregister(xhr);
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(`อัปโหลดส่วนไฟล์ไม่สำเร็จ (HTTP ${xhr.status})`));
+        const retryable = xhr.status === 408 || xhr.status === 429 || xhr.status >= 500;
+        reject(new UploadPartError(
+          `อัปโหลดส่วนไฟล์ไม่สำเร็จ (HTTP ${xhr.status})`,
+          retryable
+        ));
         return;
       }
       const etag = xhr.getResponseHeader("ETag");
       if (!etag) {
-        reject(new Error("พื้นที่จัดเก็บไม่เปิดเผย ETag กรุณาตั้งค่า CORS ให้ ExposeHeaders: ETag"));
+        reject(new UploadPartError(
+          "พื้นที่จัดเก็บไม่เปิดเผย ETag กรุณาตั้งค่า CORS ให้ ExposeHeaders: ETag",
+          false
+        ));
         return;
       }
       resolve(etag);
@@ -157,9 +197,9 @@ export function UploadManager() {
     uploadsEnabled: true,
     defaultCategoryId: null,
     maxFileBytes: String(10 * 1024 ** 3),
-    maxConcurrentFiles: 3,
-    maxConcurrentParts: 4,
-    partSizeBytes: 64 * 1024 ** 2
+    maxConcurrentFiles: 1,
+    maxConcurrentParts: 2,
+    partSizeBytes: 16 * 1024 ** 2
   });
   const xhrByItem = useRef(new Map<string, Set<XMLHttpRequest>>());
   const cancelled = useRef(new Set<string>());
@@ -267,6 +307,7 @@ export function UploadManager() {
 
   async function processItem(item: UploadItem) {
     const localId = item.localId;
+    let stopped = false;
     cancelled.current.delete(localId);
     patch(localId, {
       status: "preparing",
@@ -325,30 +366,51 @@ export function UploadManager() {
       let cursor = 0;
       const uploadWorker = async () => {
         while (cursor < remaining.length) {
-          if (cancelled.current.has(localId)) throw new Error("ยกเลิกการอัปโหลดแล้ว");
+          if (stopped || cancelled.current.has(localId)) {
+            throw new UploadPartError("ยกเลิกการอัปโหลดแล้ว", false);
+          }
           const partNumber = remaining[cursor++];
           if (partNumber === undefined) return;
           const start = (partNumber - 1) * session.partSizeBytes;
           const end = Math.min(item.file.size, start + session.partSizeBytes);
           const part = item.file.slice(start, end);
-          const presigned = await apiRequest<{
-            parts: Array<{ partNumber: number; url: string }>;
-          }>(`/uploads/${session.id}/parts/presign`, {
-            method: "POST",
-            body: JSON.stringify({ partNumbers: [partNumber] })
-          });
-          const url = presigned.parts[0]?.url;
-          if (!url) throw new Error("ไม่ได้รับ URL สำหรับอัปโหลดส่วนไฟล์");
-          const etag = await uploadPart(
-            url,
-            part,
-            loaded => {
-              inflight.set(partNumber, loaded);
+          let etag = "";
+          for (let attempt = 1; attempt <= maxUploadPartAttempts; attempt += 1) {
+            try {
+              const presigned = await apiRequest<{
+                parts: Array<{ partNumber: number; url: string }>;
+              }>(`/uploads/${session.id}/parts/presign`, {
+                method: "POST",
+                body: JSON.stringify({ partNumbers: [partNumber] })
+              });
+              const url = presigned.parts[0]?.url;
+              if (!url) throw new Error("ไม่ได้รับ URL สำหรับอัปโหลดส่วนไฟล์");
+              etag = await uploadPart(
+                url,
+                part,
+                loaded => {
+                  inflight.set(partNumber, loaded);
+                  reportProgress();
+                },
+                xhr => registerXhr(localId, xhr),
+                xhr => unregisterXhr(localId, xhr)
+              );
+              break;
+            } catch (error) {
+              inflight.delete(partNumber);
               reportProgress();
-            },
-            xhr => registerXhr(localId, xhr),
-            xhr => unregisterXhr(localId, xhr)
-          );
+              if (stopped || cancelled.current.has(localId)) throw error;
+              const retryable = !(error instanceof UploadPartError) || error.retryable;
+              if (!retryable || attempt === maxUploadPartAttempts) {
+                const message = error instanceof Error ? error.message : "ไม่ทราบสาเหตุ";
+                throw new Error(
+                  `ส่วนที่ ${partNumber} อัปโหลดไม่สำเร็จหลังลอง ${attempt} ครั้ง: ${message}`
+                );
+              }
+              await wait(retryDelay(attempt));
+            }
+          }
+          if (!etag) throw new Error(`ส่วนที่ ${partNumber} ไม่ได้รับ ETag`);
           await apiRequest(`/uploads/${session.id}/parts/record`, {
             method: "POST",
             body: JSON.stringify({
@@ -390,6 +452,9 @@ export function UploadManager() {
         speedBytesPerSecond: item.file.size / Math.max(0.1, (performance.now() - startedAt) / 1000)
       });
     } catch (error) {
+      stopped = true;
+      xhrByItem.current.get(localId)?.forEach(xhr => xhr.abort());
+      xhrByItem.current.delete(localId);
       if (cancelled.current.has(localId)) {
         patch(localId, { status: "cancelled", speedBytesPerSecond: 0 });
       } else {
@@ -446,7 +511,7 @@ export function UploadManager() {
   }
 
   function removeItem(item: UploadItem) {
-    if (["preparing", "uploading", "completing"].includes(item.status)) {
+    if (["preparing", "uploading", "completing", "error"].includes(item.status)) {
       void cancelItem(item);
     }
     setItems(current => current.filter(entry => entry.localId !== item.localId));

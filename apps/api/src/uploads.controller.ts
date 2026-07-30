@@ -242,19 +242,19 @@ export class UploadsController {
       ),
       maxConcurrentFiles: configuredInteger(
         "UPLOAD_MAX_CONCURRENT_FILES",
-        3,
+        1,
         1,
         10
       ),
       maxConcurrentParts: configuredInteger(
         "UPLOAD_MAX_CONCURRENT_PARTS",
-        4,
+        2,
         1,
         16
       ),
       partSizeBytes: configuredInteger(
         "UPLOAD_PART_SIZE_BYTES",
-        64 * 1024 ** 2,
+        16 * 1024 ** 2,
         5 * 1024 ** 2,
         512 * 1024 ** 2
       )
@@ -325,7 +325,7 @@ export class UploadsController {
 
     const partSizeBytes = configuredInteger(
       "UPLOAD_PART_SIZE_BYTES",
-      64 * 1024 ** 2,
+      16 * 1024 ** 2,
       5 * 1024 ** 2,
       512 * 1024 ** 2
     );
@@ -424,7 +424,7 @@ export class UploadsController {
       throw new BadRequestException("หมายเลขส่วนอัปโหลดไม่ถูกต้อง");
     }
 
-    const expiry = configuredInteger("UPLOAD_URL_TTL_SECONDS", 900, 60, 3600);
+    const expiry = configuredInteger("UPLOAD_URL_TTL_SECONDS", 3600, 60, 3600);
     const parts = await Promise.all(
       uniquePartNumbers.map(async partNumber => ({
         partNumber,
