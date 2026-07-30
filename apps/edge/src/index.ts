@@ -23,7 +23,7 @@ function reject(message: string, status: number) {
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+  async fetch(request: Request, env: Env) {
     if (!["GET", "HEAD"].includes(request.method)) return reject("Method Not Allowed", 405);
     if (!env.MEDIA_SIGNING_SECRET || env.MEDIA_SIGNING_SECRET.length < 32 || !env.PLAYER_ORIGIN) return reject("บริการยังไม่พร้อมใช้งาน", 503);
     const origin = request.headers.get("origin");
@@ -80,11 +80,18 @@ export default {
     headers.set("Content-Length", String(bytes));
     const status = range ? 206 : 200;
     if (env.MEDIA_ANALYTICS) {
-      ctx.waitUntil(Promise.resolve(env.MEDIA_ANALYTICS.writeDataPoint({
-        blobs: [videoId, fileId],
-        doubles: [status, bytes],
-        indexes: [sessionId]
-      })));
+      try {
+        env.MEDIA_ANALYTICS.writeDataPoint({
+          blobs: [videoId, fileId],
+          doubles: [status, bytes],
+          indexes: [sessionId]
+        });
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: "media_analytics_write_failed",
+          error: error instanceof Error ? error.message : "UNKNOWN_ERROR"
+        }));
+      }
     }
     return new Response(request.method === "HEAD" ? null : object.body, { status, headers });
   }
