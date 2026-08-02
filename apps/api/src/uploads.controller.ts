@@ -21,6 +21,7 @@ import {
 } from "./admin-auth.guard";
 import { PrismaService } from "./prisma.service";
 import { StorageService } from "./storage.service";
+import { MediaProcessingQueueService } from "./media-processing-queue.service";
 
 const allowedExtensions = new Set([
   ".mp4",
@@ -188,7 +189,8 @@ function serializeSession(session: UploadSession & { parts?: Array<{ partNumber:
 export class UploadsController {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storage: StorageService
+    private readonly storage: StorageService,
+    private readonly mediaQueue: MediaProcessingQueueService
   ) {}
 
   private async ownedSession(id: string, userId: string) {
@@ -493,6 +495,7 @@ export class UploadsController {
     if (!parsed.success) throw new BadRequestException("ข้อมูลยืนยันการอัปโหลดไม่ถูกต้อง");
     const session = await this.ownedSession(id, request.auth.user.id);
     if (session.status === "COMPLETED") {
+      await this.mediaQueue.enqueue(session.videoId);
       return { completed: true, idempotent: true, videoId: session.videoId };
     }
     await this.expireIfNeeded(session);
@@ -620,6 +623,15 @@ export class UploadsController {
       });
     });
 
+    try {
+      await this.mediaQueue.enqueue(session.videoId);
+    } catch {
+      await this.prisma.video.update({
+        where: { id: session.videoId },
+        data: { processingError: "อัปโหลดสำเร็จ แต่ยังไม่สามารถเข้าคิวแปลง HLS ได้" }
+      });
+      throw new ConflictException("อัปโหลดสำเร็จ แต่ไม่สามารถเริ่มการแปลง HLS ได้ กรุณาลองใหม่");
+    }
     return { completed: true, idempotent: false, videoId: session.videoId };
   }
 

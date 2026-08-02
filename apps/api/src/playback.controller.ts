@@ -44,10 +44,11 @@ type PlayableFile = {
   id: string;
   storageKey: string;
   role: string;
+  mimeType?: string;
 };
 
 function preferredFile(files: PlayableFile[]) {
-  return files.find(file => file.role === "PLAYBACK") ?? files.find(file => file.role === "ORIGINAL");
+  return files.find(file => file.role === "HLS_MANIFEST") ?? files.find(file => file.role === "PLAYBACK") ?? files.find(file => file.role === "ORIGINAL");
 }
 
 function playbackGrant(input: {
@@ -131,19 +132,20 @@ export class PlaybackController {
         files: {
           some: {
             id: parsed.data.fileId,
-            role: { in: ["PLAYBACK", "ORIGINAL"] }
+            role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] }
           }
         }
       },
       select: {
         id: true,
         publicId: true,
+        posterKey: true,
         files: {
           where: {
             id: parsed.data.fileId,
-            role: { in: ["PLAYBACK", "ORIGINAL"] }
+            role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] }
           },
-          select: { id: true, storageKey: true, role: true },
+          select: { id: true, storageKey: true, role: true, mimeType: true },
           take: 1
         },
         allowedDomains: {
@@ -169,6 +171,7 @@ export class PlaybackController {
       sessionId,
       expires
     });
+    const posterUrl = video.posterKey ? playbackGrant({ videoPublicId: video.publicId, fileId: file.id, storageKey: video.posterKey, sessionId, expires }).mediaUrl : null;
 
     await this.prisma.playbackSession.create({
       data: {
@@ -180,7 +183,7 @@ export class PlaybackController {
     });
     response.setHeader("Content-Security-Policy", `frame-ancestors https://${host}`);
     response.setHeader("Cache-Control", "no-store");
-    return { playbackSessionId: sessionId, expires, ...grant };
+    return { playbackSessionId: sessionId, expires, mediaType: file.mimeType, posterUrl, ...grant };
   }
 
   @Post("refresh")
@@ -203,12 +206,13 @@ export class PlaybackController {
         video: {
           select: {
             publicId: true,
+            posterKey: true,
             status: true,
             deletedAt: true,
             files: {
-              where: { role: { in: ["PLAYBACK", "ORIGINAL"] } },
+              where: { role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] } },
               orderBy: { createdAt: "desc" },
-              select: { id: true, storageKey: true, role: true }
+              select: { id: true, storageKey: true, role: true, mimeType: true }
             }
           }
         }
@@ -245,12 +249,13 @@ export class PlaybackController {
       sessionId: session.id,
       expires
     });
+    const posterUrl = session.video.posterKey ? playbackGrant({ videoPublicId: session.video.publicId, fileId: file.id, storageKey: session.video.posterKey, sessionId: session.id, expires }).mediaUrl : null;
     await this.prisma.playbackSession.update({
       where: { id: session.id },
       data: { expiresAt: new Date(expires * 1000) }
     });
     response.setHeader("Cache-Control", "no-store");
-    return { playbackSessionId: session.id, expires, ...grant };
+    return { playbackSessionId: session.id, expires, mediaType: file.mimeType, posterUrl, ...grant };
   }
 
   @Post("events")

@@ -6,6 +6,7 @@ import {
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
+  PutObjectCommand,
   S3Client,
   UploadPartCommand
 } from "@aws-sdk/client-s3";
@@ -235,6 +236,17 @@ export class StorageService {
       new GetObjectCommand({ Bucket: config.bucket, Key: storageKey }),
       { expiresIn }
     );
+  }
+
+  async putObject(storageKey: string, body: Buffer, contentType: string) {
+    const config = this.config();
+    await this.s3().send(new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: storageKey,
+      Body: body,
+      ContentType: contentType,
+      CacheControl: "private, max-age=300"
+    }));
   }
 
   async deleteObject(storageKey: string) {

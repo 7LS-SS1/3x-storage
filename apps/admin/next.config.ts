@@ -4,7 +4,11 @@ import { resolve } from "node:path";
 
 loadEnvironment({ path: resolve(process.cwd(), "../../.env"), quiet: true });
 
-const apiBaseUrl = new URL(process.env.API_URL || "http://localhost:4000").origin;
+const apiBaseUrl = new URL(
+  process.env.NODE_ENV === "production"
+    ? process.env.API_URL || "http://localhost:4000"
+    : process.env.LOCAL_API_URL || "http://localhost:4000"
+).origin;
 
 const config: NextConfig = {
   output: "standalone",

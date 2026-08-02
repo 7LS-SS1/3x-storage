@@ -19,7 +19,7 @@ export const securityConfig = {
       }
       return configured || "__Host-video_session";
     }
-    return configured || "video_session";
+    return configured && !configured.startsWith("__Host-") ? configured : "video_session";
   },
   get csrfCookieName() {
     return process.env.NODE_ENV === "production" ? "__Host-video_csrf" : "video_csrf";

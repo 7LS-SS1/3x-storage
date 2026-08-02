@@ -14,6 +14,11 @@ async function verifySignature(secret: string, value: string, supplied: string) 
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
   return crypto.subtle.verify("HMAC", key, signature, encoder.encode(value));
 }
+async function createSignature(secret: string, value: string) {
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const bytes = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(value)));
+  return [...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
 function validStorageKey(path: string) {
   if (!path || path.length > 1024 || path.includes("\\") || path.includes("//") || /[\u0000-\u001f\u007f]/.test(path)) return false;
   return path.split("/").every(segment => segment && segment !== "." && segment !== ".." && /^[A-Za-z0-9._-]+$/.test(segment));
@@ -60,10 +65,30 @@ export default {
     catch { return reject("ช่วงข้อมูลไม่ถูกต้อง", 416); }
     if (!object) return reject("ไม่พบวิดีโอ", 404);
 
+    const servedRange = object.range;
+    const contentType = object.httpMetadata?.contentType || "application/octet-stream";
+    let responseBody: ReadableStream | string | null = request.method === "HEAD" ? null : object.body;
+    let responseBytes = servedRange && "length" in servedRange && typeof servedRange.length === "number" ? servedRange.length : object.size;
+    if (request.method === "GET" && !range && contentType === "application/vnd.apple.mpegurl") {
+      const directory = path.slice(0, path.lastIndexOf("/") + 1);
+      const lines = (await object.text()).split(/\r?\n/);
+      const rewritten: string[] = [];
+      for (const line of lines) {
+        if (!line || line.startsWith("#")) { rewritten.push(line); continue; }
+        const segmentPath = `${directory}${line}`;
+        if (!validStorageKey(segmentPath)) return reject("HLS manifest ไม่ถูกต้อง", 500);
+        const segmentSignature = await createSignature(env.MEDIA_SIGNING_SECRET, [segmentPath, expires, sessionId, videoId, fileId].join("\n"));
+        const segmentUrl = new URL(segmentPath.split("/").map(encodeURIComponent).join("/"), `${url.origin}/`);
+        segmentUrl.search = new URLSearchParams({ expires: expiresRaw, sessionId, videoId, fileId, signature: segmentSignature }).toString();
+        rewritten.push(segmentUrl.toString());
+      }
+      responseBody = rewritten.join("\n");
+      responseBytes = encoder.encode(responseBody).byteLength;
+    }
     const headers = new Headers({
       "Accept-Ranges": "bytes",
       "Cache-Control": "private, max-age=300, no-transform",
-      "Content-Type": object.httpMetadata?.contentType || "application/octet-stream",
+      "Content-Type": contentType,
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
       "Cross-Origin-Resource-Policy": "cross-origin"
@@ -72,12 +97,11 @@ export default {
       headers.set("Access-Control-Allow-Origin", env.PLAYER_ORIGIN);
       headers.set("Vary", "Origin");
     }
-    const servedRange = object.range;
     if (servedRange && "offset" in servedRange && typeof servedRange.offset === "number" && typeof servedRange.length === "number") {
       headers.set("Content-Range", `bytes ${servedRange.offset}-${servedRange.offset + servedRange.length - 1}/${object.size}`);
     }
-    const bytes = servedRange && "length" in servedRange && typeof servedRange.length === "number" ? servedRange.length : object.size;
-    headers.set("Content-Length", String(bytes));
+    const bytes = responseBytes;
+    headers.set("Content-Length", String(responseBytes));
     const status = range ? 206 : 200;
     if (env.MEDIA_ANALYTICS) {
       try {
@@ -93,6 +117,6 @@ export default {
         }));
       }
     }
-    return new Response(request.method === "HEAD" ? null : object.body, { status, headers });
+    return new Response(responseBody, { status, headers });
   }
 } satisfies ExportedHandler<Env>;

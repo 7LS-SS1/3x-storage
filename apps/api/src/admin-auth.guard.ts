@@ -31,7 +31,7 @@ function cookieName() {
   const configured = process.env.SESSION_COOKIE_NAME?.trim();
   return process.env.NODE_ENV === "production"
     ? configured || "__Host-video_session"
-    : configured || "video_session";
+    : configured && !configured.startsWith("__Host-") ? configured : "video_session";
 }
 
 function csrfCookieName() {
@@ -154,7 +154,9 @@ export class CsrfGuard implements CanActivate {
     if (["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) return true;
 
     const origin = request.headers.origin;
-    const expectedOrigin = new URL(process.env.ADMIN_URL || "http://localhost:3000").origin;
+    const expectedOrigin = process.env.NODE_ENV === "production"
+      ? new URL(process.env.ADMIN_URL || "http://localhost:3000").origin
+      : new URL(process.env.LOCAL_ADMIN_URL || "http://localhost:3000").origin;
     if (origin !== expectedOrigin) {
       throw new ForbiddenException("คำขอไม่ได้มาจากหน้าผู้ดูแลระบบ");
     }

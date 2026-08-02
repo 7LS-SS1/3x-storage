@@ -8,6 +8,8 @@ type PlaybackGrant = {
   expires: number;
   mediaUrl: string;
   eventToken: string;
+  mediaType?: string;
+  posterUrl?: string | null;
 };
 
 export function EmbedPlayer({
@@ -83,6 +85,8 @@ export function EmbedPlayer({
       onEvent={onPlayerEvent}
       onRefreshAuthorization={refreshAuthorization}
       source={initialGrant.mediaUrl}
+      sourceType={initialGrant.mediaType}
+      poster={initialGrant.posterUrl || undefined}
       title={title}
     />
   );

@@ -82,7 +82,9 @@ export function resolveStorageOrigin(
 
 function cookieName() {
   const configured = process.env.SESSION_COOKIE_NAME?.trim();
-  return process.env.NODE_ENV === "production" ? (configured || "__Host-video_session") : (configured || "video_session");
+  return process.env.NODE_ENV === "production"
+    ? (configured || "__Host-video_session")
+    : (configured && !configured.startsWith("__Host-") ? configured : "video_session");
 }
 
 export function middleware(request: NextRequest) {
