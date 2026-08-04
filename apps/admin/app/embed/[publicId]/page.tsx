@@ -10,6 +10,8 @@ type PlaybackGrant = {
   expires: number;
   mediaUrl: string;
   eventToken: string;
+  mediaType?: string;
+  posterUrl?: string | null;
 };
 
 type PlayableFile = {
@@ -18,7 +20,7 @@ type PlayableFile = {
 };
 
 function preferredFile(files: PlayableFile[]) {
-  return files.find(file => file.role === "PLAYBACK") ?? files.find(file => file.role === "ORIGINAL");
+  return files.find(file => file.role === "HLS_MANIFEST") ?? files.find(file => file.role === "PLAYBACK") ?? files.find(file => file.role === "ORIGINAL");
 }
 
 function EmbedError({ message }: { message: string }) {
@@ -49,7 +51,7 @@ export default async function EmbedPage({
     select: {
       title: true,
       files: {
-        where: { role: { in: ["PLAYBACK", "ORIGINAL"] } },
+        where: { role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] } },
         orderBy: { createdAt: "desc" },
         select: { id: true, role: true }
       }

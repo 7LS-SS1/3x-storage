@@ -17,6 +17,7 @@ import { UsersController } from "./users.controller";
 import { DriveImportQueueService } from "./drive-import-queue.service";
 import { GoogleDriveController } from "./google-drive.controller";
 import { GoogleDriveService } from "./google-drive.service";
+import { MediaProcessingQueueService } from "./media-processing-queue.service";
 
 @Module({
   imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }])],
@@ -37,6 +38,7 @@ import { GoogleDriveService } from "./google-drive.service";
     PrismaService,
     StorageService,
     DriveImportQueueService,
+    MediaProcessingQueueService,
     GoogleDriveService,
     AdminSessionGuard,
     CsrfGuard,

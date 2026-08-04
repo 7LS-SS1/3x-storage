@@ -11,8 +11,12 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
+  UseInterceptors,
   UseGuards
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { randomUUID } from "node:crypto";
 import { VideoStatus } from "@prisma/client";
 import { z } from "zod";
 import {
@@ -93,6 +97,7 @@ type VideoListItem = {
   uploadedAt: Date | null;
   createdAt: Date;
   processingError: string | null;
+  posterKey: string | null;
   category: { id: string; name: string } | null;
   allowedDomains: Array<{
     allowedDomain: { id: string; hostname: string; includeSubdomains: boolean };
@@ -128,8 +133,9 @@ function serializeVideo(video: VideoListItem) {
     uploadedAt: (video.uploadedAt || video.createdAt).toISOString(),
     uploadedBy: video.uploadedBy,
     processingError: video.processingError,
+    posterAvailable: Boolean(video.posterKey),
     previewAvailable: video.files.some(file =>
-      ["PLAYBACK", "ORIGINAL"].includes(file.role)
+      ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"].includes(file.role)
     ),
     embedUrl: player ? `${player}/embed/${video.publicId}` : null
   };
@@ -187,7 +193,10 @@ export class VideosController {
           .abortMultipartUpload(upload.storageKey, upload.storageUploadId)
           .catch(() => undefined);
       }
-      const uniqueStorageKeys = [...new Set(video.files.map(file => file.storageKey))];
+      const uniqueStorageKeys = [...new Set([
+        ...video.files.map(file => file.storageKey),
+        ...(video.posterKey ? [video.posterKey] : [])
+      ])];
       for (let offset = 0; offset < uniqueStorageKeys.length; offset += 5) {
         await Promise.all(
           uniqueStorageKeys
@@ -265,6 +274,7 @@ export class VideosController {
           uploadedAt: true,
           createdAt: true,
           processingError: true,
+          posterKey: true,
           category: { select: { id: true, name: true } },
           allowedDomains: {
             select: {
@@ -306,6 +316,7 @@ export class VideosController {
         uploadedAt: true,
         createdAt: true,
         processingError: true,
+        posterKey: true,
         category: { select: { id: true, name: true } },
         allowedDomains: {
           select: {
@@ -389,6 +400,38 @@ export class VideosController {
     return { video };
   }
 
+  @Post(":id/poster")
+  @UseInterceptors(FileInterceptor("poster", { limits: { fileSize: 8 * 1024 * 1024, files: 1 } }))
+  async updatePoster(
+    @Req() request: AdminRequest,
+    @Param("id") id: string,
+    @UploadedFile() file: { buffer: Buffer; mimetype: string; size: number } | undefined
+  ) {
+    if (!file?.buffer?.length) throw new BadRequestException("กรุณาเลือกรูปหน้าปก");
+    const signatures = [
+      { type: "image/jpeg", ext: "jpg", valid: file.buffer[0] === 0xff && file.buffer[1] === 0xd8 },
+      { type: "image/png", ext: "png", valid: file.buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) },
+      { type: "image/webp", ext: "webp", valid: file.buffer.subarray(0, 4).toString() === "RIFF" && file.buffer.subarray(8, 12).toString() === "WEBP" }
+    ];
+    const image = signatures.find(item => item.type === file.mimetype && item.valid);
+    if (!image) throw new BadRequestException("รองรับรูป JPG, PNG หรือ WebP เท่านั้น");
+    const existing = await this.prisma.video.findFirst({ where: { id, deletedAt: null }, select: { id: true, posterKey: true } });
+    if (!existing) throw new NotFoundException("ไม่พบวิดีโอ");
+    const posterKey = `videos/${id}/posters/${randomUUID()}.${image.ext}`;
+    await this.storage.putObject(posterKey, file.buffer, image.type);
+    try {
+      await this.prisma.$transaction([
+        this.prisma.video.update({ where: { id }, data: { posterKey } }),
+        this.prisma.auditLog.create({ data: { actorUserId: request.auth.user.id, action: "VIDEO_POSTER_UPDATED", entityType: "Video", entityId: id, metadataJson: { mimeType: image.type, sizeBytes: file.size }, userAgent: request.headers["user-agent"]?.slice(0, 512) } })
+      ]);
+    } catch (error) {
+      await this.storage.deleteObject(posterKey).catch(() => undefined);
+      throw error;
+    }
+    if (existing.posterKey) await this.storage.deleteObject(existing.posterKey).catch(() => undefined);
+    return { updated: true };
+  }
+
   @Delete(":id")
   async remove(@Req() request: AdminRequest, @Param("id") id: string) {
     const result = await this.deleteOne(id, request.auth.user);
@@ -464,7 +507,7 @@ export class VideosController {
         id: true,
         title: true,
         files: {
-          where: { role: { in: ["PLAYBACK", "ORIGINAL"] } },
+          where: { role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] } },
           orderBy: { createdAt: "desc" },
           select: { id: true, role: true, storageKey: true, mimeType: true },
           take: 5
@@ -473,6 +516,7 @@ export class VideosController {
     });
     if (!video) throw new NotFoundException("ไม่พบวิดีโอ");
     const file =
+      video.files.find(item => item.role === "HLS_MANIFEST") ||
       video.files.find(item => item.role === "PLAYBACK") ||
       video.files.find(item => item.role === "ORIGINAL");
     if (!file) throw new ConflictException("วิดีโอยังไม่มีไฟล์สำหรับแสดงตัวอย่าง");

@@ -1,6 +1,7 @@
 name = "video-storage-edge"
 main = "src/index.ts"
-compatibility_date = "2025-07-22"
+compatibility_date = "2026-08-04"
+compatibility_flags = ["nodejs_compat"]
 preview_urls = false
 [vars]
 PLAYER_ORIGIN = "https://3x-storage.76.13.223.158.sslip.io"

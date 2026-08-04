@@ -30,7 +30,9 @@ export function getRequestFingerprint(request: Pick<NextRequest, "headers">) {
 export function assertSameOrigin(request: NextRequest): void {
   const origin = request.headers.get("origin");
   const fetchSite = request.headers.get("sec-fetch-site");
-  const expected = new URL(process.env.ADMIN_URL || request.nextUrl.origin).origin;
+  const expected = process.env.NODE_ENV === "production"
+    ? new URL(process.env.ADMIN_URL || request.nextUrl.origin).origin
+    : request.nextUrl.origin;
   if (!origin || origin !== expected || (fetchSite && fetchSite !== "same-origin")) {
     throw new Error("INVALID_ORIGIN");
   }

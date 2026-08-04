@@ -12,6 +12,7 @@ import {
   Search,
   Trash2,
   Upload,
+  ImageUp,
   X
 } from "lucide-react";
 import Link from "next/link";
@@ -51,6 +52,7 @@ type VideoItem = {
   processingError: string | null;
   previewAvailable: boolean;
   embedUrl: string | null;
+  posterAvailable: boolean;
 };
 
 type VideoResponse = {
@@ -133,6 +135,7 @@ export function VideoLibraryClient({ role }: { role: Role }) {
   const [editTitle, setEditTitle] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editDomains, setEditDomains] = useState<Set<string>>(new Set());
+  const [editPoster, setEditPoster] = useState<File | null>(null);
   const [preview, setPreview] = useState<{
     title: string;
     url: string;
@@ -238,6 +241,7 @@ export function VideoLibraryClient({ role }: { role: Role }) {
     setEditTitle(video.title);
     setEditCategory(video.category?.id || "");
     setEditDomains(new Set(video.allowedDomains.map(domain => domain.id)));
+    setEditPoster(null);
   }
 
   async function saveEdit(event: FormEvent) {
@@ -254,6 +258,11 @@ export function VideoLibraryClient({ role }: { role: Role }) {
           ...(role !== "STAFF" ? { allowedDomainIds: [...editDomains] } : {})
         })
       });
+      if (editPoster) {
+        const form = new FormData();
+        form.set("poster", editPoster);
+        await apiRequest(`/videos/${editing.id}/poster`, { method: "POST", body: form });
+      }
       setEditing(null);
       setNotice("บันทึกข้อมูลวิดีโอแล้ว");
       await load();
@@ -605,6 +614,17 @@ export function VideoLibraryClient({ role }: { role: Role }) {
                   <option key={category.id} value={category.id}>{category.name}</option>
                 ))}
               </select>
+            </label>
+            <label>รูปหน้าปก
+              <span className="poster-upload-field">
+                <ImageUp />
+                <input
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={event => setEditPoster(event.target.files?.[0] || null)}
+                  type="file"
+                />
+                <small>{editPoster ? editPoster.name : editing.posterAvailable ? "มีรูปหน้าปกแล้ว — เลือกไฟล์เพื่อเปลี่ยน" : "JPG, PNG หรือ WebP (สูงสุด 8 MB)"}</small>
+              </span>
             </label>
             {role !== "STAFF" && (
               <fieldset className="domain-check-list">

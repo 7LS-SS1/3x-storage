@@ -547,6 +547,7 @@ async function processImport(job: Job<{ importId: string }>) {
         }
       })
     ]);
+    return { videoId: imported.videoId };
   } catch (error) {
     if (uploadId && client && storage) {
       await client

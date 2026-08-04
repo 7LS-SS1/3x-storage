@@ -73,6 +73,20 @@ describe("authentication middleware", () => {
     expect(response.headers.get("cross-origin-resource-policy")).toBe("cross-origin");
   });
 
+  it("allows signed media URLs to render as video posters", () => {
+    const previousMediaUrl = process.env.MEDIA_URL;
+    process.env.MEDIA_URL = "https://video-storage-edge.example.workers.dev";
+    try {
+      const response = middleware(new NextRequest("https://player.example.test/login"));
+      expect(response.headers.get("content-security-policy")).toContain(
+        "img-src 'self' data: blob: https://video-storage-edge.example.workers.dev"
+      );
+    } finally {
+      if (previousMediaUrl === undefined) delete process.env.MEDIA_URL;
+      else process.env.MEDIA_URL = previousMediaUrl;
+    }
+  });
+
   it("keeps direct embed navigation non-frameable when no parent referrer exists", () => {
     const response = middleware(
       new NextRequest("https://player.example.test/embed/video-public-id")

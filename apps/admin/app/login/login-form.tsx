@@ -3,7 +3,6 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
-import { size } from "zod/v4";
 
 export function LoginForm() {
   const router = useRouter();

@@ -1,13 +1,16 @@
 "use client";
 
 import { SecureVideoPlayer, type PlayerEvent } from "@video/player";
-import { useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { playbackRefreshDelay } from "./playback-refresh";
 
 type PlaybackGrant = {
   playbackSessionId: string;
   expires: number;
   mediaUrl: string;
   eventToken: string;
+  mediaType?: string;
+  posterUrl?: string | null;
 };
 
 export function EmbedPlayer({
@@ -18,25 +21,62 @@ export function EmbedPlayer({
   initialGrant: PlaybackGrant;
 }) {
   const grant = useRef(initialGrant);
+  const refreshInFlight = useRef<Promise<string> | null>(null);
   const continuousStartedAt = useRef<number | null>(null);
   const playEventSent = useRef(false);
+  const [source, setSource] = useState(initialGrant.mediaUrl);
+  const [poster, setPoster] = useState(initialGrant.posterUrl || null);
+  const [expires, setExpires] = useState(initialGrant.expires);
 
-  async function refreshAuthorization() {
-    const response = await fetch("/backend/playback/refresh", {
-      method: "POST",
-      cache: "no-store",
-      credentials: "omit",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        playbackSessionId: grant.current.playbackSessionId,
-        eventToken: grant.current.eventToken
-      })
-    });
-    if (!response.ok) throw new Error("ไม่สามารถต่ออายุสิทธิ์รับชมได้");
-    const next = await response.json() as PlaybackGrant;
-    grant.current = next;
-    return next.mediaUrl;
-  }
+  const refreshAuthorization = useCallback(async () => {
+    if (refreshInFlight.current) return refreshInFlight.current;
+    const pending = (async () => {
+      const response = await fetch("/backend/playback/refresh", {
+        method: "POST",
+        cache: "no-store",
+        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playbackSessionId: grant.current.playbackSessionId,
+          eventToken: grant.current.eventToken
+        })
+      });
+      if (!response.ok) throw new Error("ไม่สามารถต่ออายุสิทธิ์รับชมได้");
+      const next = await response.json() as PlaybackGrant;
+      grant.current = next;
+      setSource(next.mediaUrl);
+      setPoster(next.posterUrl || null);
+      setExpires(next.expires);
+      return next.mediaUrl;
+    })();
+    refreshInFlight.current = pending;
+    try {
+      return await pending;
+    } finally {
+      if (refreshInFlight.current === pending) refreshInFlight.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      try {
+        await refreshAuthorization();
+      } catch {
+        if (!cancelled) retryTimer = setTimeout(() => void refresh(), 15_000);
+      }
+    };
+    const refreshTimer = setTimeout(
+      () => void refresh(),
+      playbackRefreshDelay(expires)
+    );
+    return () => {
+      cancelled = true;
+      clearTimeout(refreshTimer);
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [expires, refreshAuthorization]);
 
   function recordPlayEvent() {
     const current = grant.current;
@@ -82,7 +122,9 @@ export function EmbedPlayer({
     <SecureVideoPlayer
       onEvent={onPlayerEvent}
       onRefreshAuthorization={refreshAuthorization}
-      source={initialGrant.mediaUrl}
+      source={source}
+      sourceType={initialGrant.mediaType}
+      poster={poster || undefined}
       title={title}
     />
   );
