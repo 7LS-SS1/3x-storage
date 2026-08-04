@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { Worker } from "bullmq";
 import type IORedis from "ioredis";
@@ -10,7 +10,7 @@ import { basename, extname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
-import { mediaPosterTime, mediaScaleFilter } from "./media-processing-config.js";
+import { mediaPosterStorageKey, mediaPosterTime, mediaScaleFilter } from "./media-processing-config.js";
 
 const prisma = new PrismaClient();
 
@@ -65,7 +65,7 @@ export function createMediaProcessingWorker(connection: IORedis) {
     const manifest = join(workDir, "index.m3u8");
     const poster = join(workDir, "poster.jpg");
     const prefix = `videos/${video.id}/hls`;
-    const posterKey = `videos/${video.id}/poster.jpg`;
+    const posterKey = mediaPosterStorageKey(video.id);
     const { client, bucket } = storage();
     try {
       await prisma.video.update({ where: { id: video.id }, data: { status: "PROCESSING", processingError: null } });
@@ -97,14 +97,28 @@ export function createMediaProcessingWorker(connection: IORedis) {
         records.push({ id: randomUUID(), videoId: video.id, role: manifestFile ? "HLS_MANIFEST" as const : "HLS_SEGMENT" as const, storageKey: key, filename: name, extension: extname(name), mimeType: manifestFile ? "application/vnd.apple.mpegurl" : "video/mp2t", container: manifestFile ? "hls" : "mpegts", sizeBytes: BigInt(size) });
       }
       const posterSize = (await stat(poster)).size;
+      let automaticPosterUploaded = false;
       if (!video.posterKey) {
         await client.send(new PutObjectCommand({ Bucket: bucket, Key: posterKey, Body: await readFile(poster), ContentType: "image/jpeg", CacheControl: "private, max-age=300" }));
+        automaticPosterUploaded = true;
       }
-      await prisma.$transaction(async tx => {
+      const automaticPosterAssigned = await prisma.$transaction(async tx => {
         await tx.videoFile.deleteMany({ where: { videoId: video.id, role: { in: ["HLS_MANIFEST", "HLS_SEGMENT"] } } });
         await tx.videoFile.createMany({ data: records });
-        await tx.video.update({ where: { id: video.id }, data: { status: "READY", playbackKey: `${prefix}/index.m3u8`, posterKey: video.posterKey || posterKey, durationSeconds: durationSeconds || null, width: videoStream?.width, height: videoStream?.height, mimeType: "application/vnd.apple.mpegurl", processingError: null } });
+        let posterAssigned = false;
+        if (automaticPosterUploaded) {
+          const assignment = await tx.video.updateMany({
+            where: { id: video.id, posterKey: null },
+            data: { posterKey }
+          });
+          posterAssigned = assignment.count === 1;
+        }
+        await tx.video.update({ where: { id: video.id }, data: { status: "READY", playbackKey: `${prefix}/index.m3u8`, durationSeconds: durationSeconds || null, width: videoStream?.width, height: videoStream?.height, mimeType: "application/vnd.apple.mpegurl", processingError: null } });
+        return posterAssigned;
       });
+      if (automaticPosterUploaded && !automaticPosterAssigned) {
+        await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: posterKey })).catch(() => undefined);
+      }
       await job.updateProgress(100);
       return { manifestKey: `${prefix}/index.m3u8`, segmentCount: records.length - 1, posterSize };
     } catch (error) {

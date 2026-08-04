@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mediaMaxWidth, mediaPosterTime, mediaScaleFilter } from "./media-processing-config.js";
+import { mediaMaxWidth, mediaPosterStorageKey, mediaPosterTime, mediaScaleFilter } from "./media-processing-config.js";
 
 describe("media processing configuration", () => {
   it("uses a production-safe default without upscaling", () => {
@@ -23,5 +23,9 @@ describe("media processing configuration", () => {
     expect(mediaPosterTime(120, undefined)).toBe("3.000");
     expect(mediaPosterTime(10, "4")).toBe("4.000");
     expect(mediaPosterTime(0, undefined)).toBe("0.000");
+  });
+
+  it("stores generated covers below the R2 images prefix", () => {
+    expect(mediaPosterStorageKey("video-123")).toBe("images/video-123/poster.jpg");
   });
 });

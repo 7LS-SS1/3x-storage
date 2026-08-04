@@ -13,7 +13,7 @@ export type SecurePlayerProps = {
 const fmt=(n:number)=>`${Math.floor(n/60).toString().padStart(2,"0")}:${Math.floor(n%60).toString().padStart(2,"0")}`;
 export function SecureVideoPlayer({source,sourceType,poster,title,onEvent,onRefreshAuthorization}:SecurePlayerProps){
   const ref=useRef<HTMLVideoElement>(null); const wrap=useRef<HTMLDivElement>(null);
-  const [src,setSrc]=useState(source); const [playing,setPlaying]=useState(false); const [muted,setMuted]=useState(false); const [time,setTime]=useState(0); const [duration,setDuration]=useState(0); const [error,setError]=useState("");
+  const [src,setSrc]=useState(source); const [playing,setPlaying]=useState(false); const [started,setStarted]=useState(false); const [muted,setMuted]=useState(false); const [time,setTime]=useState(0); const [duration,setDuration]=useState(0); const [error,setError]=useState("");
   useEffect(()=>setSrc(source),[source]);
   useEffect(()=>{
     const video=ref.current;
@@ -26,17 +26,21 @@ export function SecureVideoPlayer({source,sourceType,poster,title,onEvent,onRefr
     return()=>hls.destroy();
   },[src,sourceType]);
   const emit=(event:PlayerEvent)=>{const v=ref.current;if(v)onEvent?.(event,v)};
+  const startPlayback=()=>{const video=ref.current;if(!video)return;if(video.ended)video.currentTime=0;void video.play()};
   const retry=async()=>{if(!onRefreshAuthorization)return;try{setSrc(await onRefreshAuthorization());setError("")}catch{setError("ลิงก์รับชมหมดอายุ กรุณาลองใหม่อีกครั้ง")}};
   return <div className="svp" ref={wrap} onContextMenu={e=>e.preventDefault()}>
     <video ref={ref} src={sourceType==="application/vnd.apple.mpegurl"?undefined:src} poster={poster} playsInline preload="metadata" aria-label={title??"เครื่องเล่นวิดีโอ"}
-      onLoadedMetadata={e=>{setDuration(e.currentTarget.duration);emit("ready")}} onPlay={()=>{setPlaying(true);emit("play")}}
-      onPlaying={()=>emit("playing")} onPause={()=>{setPlaying(false);emit("pause")}} onEnded={()=>emit("ended")}
+      onLoadedMetadata={e=>{setDuration(e.currentTarget.duration);emit("ready")}} onPlay={()=>{setPlaying(true);setStarted(true);emit("play")}}
+      onPlaying={()=>emit("playing")} onPause={()=>{setPlaying(false);emit("pause")}} onEnded={()=>{setPlaying(false);setStarted(false);emit("ended")}}
       onTimeUpdate={e=>{setTime(e.currentTarget.currentTime);emit("timeupdate")}} onError={()=>{setError("ไม่สามารถเล่นวิดีโอนี้ได้");emit("error")}}/>
+    {poster&&!started&&!error&&<button type="button" className="svp-poster" aria-label={`เล่นวิดีโอ ${title??""}`.trim()} onClick={startPlayback}>
+      <img src={poster} alt="" draggable={false}/><span><Play/></span>
+    </button>}
     {error&&<div className="svp-error"><b>เกิดข้อผิดพลาดในการเล่น</b><span>{error}</span>{onRefreshAuthorization&&<button onClick={retry}>ขอสิทธิ์รับชมใหม่</button>}</div>}
     <div className="svp-controls"><input aria-label="เลื่อนตำแหน่งวิดีโอ" type="range" min="0" max={duration||0} value={time} onChange={e=>{if(ref.current)ref.current.currentTime=+e.target.value}}/>
       <div><span>
         <button aria-label="ย้อนกลับ 10 วินาที" onClick={()=>{if(ref.current)ref.current.currentTime-=10}}><RotateCcw/></button>
-        <button aria-label={playing?"หยุดชั่วคราว":"เล่น"} onClick={()=>playing?ref.current?.pause():ref.current?.play()}>{playing?<Pause/>:<Play/>}</button>
+        <button aria-label={playing?"หยุดชั่วคราว":"เล่น"} onClick={()=>playing?ref.current?.pause():startPlayback()}>{playing?<Pause/>:<Play/>}</button>
         <button aria-label="เดินหน้า 10 วินาที" onClick={()=>{if(ref.current)ref.current.currentTime+=10}}><RotateCw/></button>
         <i>{fmt(time)} / {fmt(duration)}</i>
       </span><span>

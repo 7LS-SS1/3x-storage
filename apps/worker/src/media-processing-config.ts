@@ -14,3 +14,7 @@ export function mediaPosterTime(durationSeconds: number, value = process.env.MED
   const duration = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : 0;
   return Math.min(requested, duration / 2).toFixed(3);
 }
+
+export function mediaPosterStorageKey(videoId: string) {
+  return `images/${videoId}/poster.jpg`;
+}

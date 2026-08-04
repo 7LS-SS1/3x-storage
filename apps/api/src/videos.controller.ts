@@ -27,6 +27,7 @@ import {
 } from "./admin-auth.guard";
 import { PrismaService } from "./prisma.service";
 import { StorageService } from "./storage.service";
+import { uploadedPosterStorageKey } from "./poster-storage";
 
 const listSchema = z
   .object({
@@ -417,7 +418,7 @@ export class VideosController {
     if (!image) throw new BadRequestException("รองรับรูป JPG, PNG หรือ WebP เท่านั้น");
     const existing = await this.prisma.video.findFirst({ where: { id, deletedAt: null }, select: { id: true, posterKey: true } });
     if (!existing) throw new NotFoundException("ไม่พบวิดีโอ");
-    const posterKey = `videos/${id}/posters/${randomUUID()}.${image.ext}`;
+    const posterKey = uploadedPosterStorageKey(id, randomUUID(), image.ext);
     await this.storage.putObject(posterKey, file.buffer, image.type);
     try {
       await this.prisma.$transaction([
@@ -506,6 +507,7 @@ export class VideosController {
       select: {
         id: true,
         title: true,
+        posterKey: true,
         files: {
           where: { role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] } },
           orderBy: { createdAt: "desc" },
@@ -526,6 +528,9 @@ export class VideosController {
         title: video.title,
         mimeType: file.mimeType,
         url: await this.storage.createReadUrl(file.storageKey, expiresIn),
+        posterUrl: video.posterKey
+          ? await this.storage.createReadUrl(video.posterKey, expiresIn)
+          : null,
         expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString()
       }
     };

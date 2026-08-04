@@ -140,6 +140,7 @@ export function VideoLibraryClient({ role }: { role: Role }) {
     title: string;
     url: string;
     mimeType: string;
+    posterUrl: string | null;
   } | null>(null);
 
   const queryString = searchParams.toString();
@@ -223,7 +224,7 @@ export function VideoLibraryClient({ role }: { role: Role }) {
     setError("");
     try {
       const result = await apiRequest<{
-        preview: { title: string; url: string; mimeType: string };
+        preview: { title: string; url: string; mimeType: string; posterUrl: string | null };
       }>(`/videos/${video.id}/admin-preview-token`, {
         method: "POST",
         body: JSON.stringify({})
@@ -668,7 +669,7 @@ export function VideoLibraryClient({ role }: { role: Role }) {
               <div><span className="section-number">ADMIN PREVIEW</span><h2>{preview.title}</h2></div>
               <button onClick={() => setPreview(null)} type="button"><X /></button>
             </div>
-            <video autoPlay controls playsInline src={preview.url}>
+            <video controls playsInline poster={preview.posterUrl || undefined} src={preview.url}>
               <source src={preview.url} type={preview.mimeType} />
             </video>
             <p>การแสดงตัวอย่างสำหรับผู้ดูแลระบบจะไม่เพิ่มจำนวนการเล่น</p>
