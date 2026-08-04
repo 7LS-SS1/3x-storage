@@ -10,6 +10,7 @@ import { basename, extname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
+import { mediaPosterTime, mediaScaleFilter } from "./media-processing-config.js";
 
 const prisma = new PrismaClient();
 
@@ -76,13 +77,14 @@ export function createMediaProcessingWorker(connection: IORedis) {
         format?: { duration?: string }; streams?: Array<{ codec_type?: string; width?: number; height?: number }>;
       };
       const videoStream = probe.streams?.find(stream => stream.codec_type === "video");
+      const durationSeconds = Number(probe.format?.duration || 0) || 0;
       await run("ffmpeg", ["-y", "-i", input,
         "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", process.env.MEDIA_VIDEO_PRESET || "medium",
-        "-crf", process.env.MEDIA_VIDEO_CRF || "23", "-pix_fmt", "yuv420p", "-c:a", "aac",
+        "-crf", process.env.MEDIA_VIDEO_CRF || "23", "-vf", mediaScaleFilter(), "-pix_fmt", "yuv420p", "-c:a", "aac",
         "-b:a", process.env.MEDIA_AUDIO_BITRATE || "128k", "-ac", "2", "-ar", "48000",
         "-force_key_frames", "expr:gte(t,n_forced*6)", "-hls_time", "6", "-hls_playlist_type", "vod",
         "-hls_flags", "independent_segments", "-hls_segment_filename", join(workDir, "segment-%05d.ts"), manifest]);
-      await run("ffmpeg", ["-y", "-ss", process.env.MEDIA_POSTER_TIME || "3", "-i", input, "-frames:v", "1", "-vf", "scale='min(1280,iw)':-2", "-q:v", "2", poster]);
+      await run("ffmpeg", ["-y", "-ss", mediaPosterTime(durationSeconds), "-i", input, "-frames:v", "1", "-vf", "scale='min(1280,iw)':-2", "-q:v", "2", poster]);
 
       const outputNames = (await readdir(workDir)).filter(name => name === "index.m3u8" || name.endsWith(".ts"));
       const records: Prisma.VideoFileCreateManyInput[] = [];
@@ -101,7 +103,7 @@ export function createMediaProcessingWorker(connection: IORedis) {
       await prisma.$transaction(async tx => {
         await tx.videoFile.deleteMany({ where: { videoId: video.id, role: { in: ["HLS_MANIFEST", "HLS_SEGMENT"] } } });
         await tx.videoFile.createMany({ data: records });
-        await tx.video.update({ where: { id: video.id }, data: { status: "READY", playbackKey: `${prefix}/index.m3u8`, posterKey: video.posterKey || posterKey, durationSeconds: Number(probe.format?.duration || 0) || null, width: videoStream?.width, height: videoStream?.height, mimeType: "application/vnd.apple.mpegurl", processingError: null } });
+        await tx.video.update({ where: { id: video.id }, data: { status: "READY", playbackKey: `${prefix}/index.m3u8`, posterKey: video.posterKey || posterKey, durationSeconds: durationSeconds || null, width: videoStream?.width, height: videoStream?.height, mimeType: "application/vnd.apple.mpegurl", processingError: null } });
       });
       await job.updateProgress(100);
       return { manifestKey: `${prefix}/index.m3u8`, segmentCount: records.length - 1, posterSize };

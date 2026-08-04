@@ -113,7 +113,7 @@ export function middleware(request: NextRequest) {
     "form-action 'self'",
     `frame-ancestors ${isEmbed ? embedAncestor(request) : "'none'"}`,
     "object-src 'none'",
-    "img-src 'self' data: blob: https://*.googleusercontent.com https://*.gstatic.com",
+    `img-src 'self' data: blob:${storageSource}${mediaSource} https://*.googleusercontent.com https://*.gstatic.com`,
     `media-src 'self' blob:${storageSource}${mediaSource}`,
     `connect-src 'self'${storageSource}${mediaSource} https://www.googleapis.com https://content.googleapis.com https://picker.googleapis.com`,
     "frame-src 'self' https://docs.google.com https://drive.google.com https://accounts.google.com https://picker.googleapis.com",
