@@ -5,6 +5,7 @@ import {
   Check,
   Cloud,
   FileVideo,
+  ImageUp,
   Laptop,
   Pause,
   RefreshCw,
@@ -32,6 +33,7 @@ type UploadItem = {
   file: File;
   title: string;
   categoryId: string;
+  poster: File | null;
   status: UploadStatus;
   progress: number;
   speedBytesPerSecond: number;
@@ -68,6 +70,8 @@ type UploadConfiguration = {
 
 const maxUploadPartAttempts = 5;
 const uploadPartTimeoutMs = 15 * 60 * 1000;
+const maxPosterBytes = 8 * 1024 * 1024;
+const allowedPosterTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 class UploadPartError extends Error {
   constructor(
@@ -256,6 +260,7 @@ export function UploadManager() {
         file,
         title: titleFromFilename(file.name),
         categoryId: batchCategoryId,
+        poster: null,
         status: "queued",
         progress: 0,
         speedBytesPerSecond: 0,
@@ -274,6 +279,19 @@ export function UploadManager() {
   function chooseFiles(event: ChangeEvent<HTMLInputElement>) {
     addFiles(Array.from(event.target.files || []));
     event.target.value = "";
+  }
+
+  function choosePoster(localId: string, file: File | undefined) {
+    if (!file) {
+      patch(localId, { poster: null });
+      return;
+    }
+    if (!allowedPosterTypes.has(file.type) || file.size > maxPosterBytes) {
+      setGlobalError("รูปหน้าปกต้องเป็น JPG, PNG หรือ WebP และมีขนาดไม่เกิน 8 MB");
+      return;
+    }
+    setGlobalError("");
+    patch(localId, { poster: file });
   }
 
   function applyBatchCategory(categoryId: string) {
@@ -430,6 +448,14 @@ export function UploadManager() {
       await Promise.all(Array.from({ length: concurrentParts }, () => uploadWorker()));
       if (cancelled.current.has(localId)) return;
       patch(localId, { status: "completing", progress: 99 });
+      if (item.poster) {
+        const posterForm = new FormData();
+        posterForm.set("poster", item.poster);
+        await apiRequest(`/videos/${session.videoId}/poster`, {
+          method: "POST",
+          body: posterForm
+        });
+      }
       await apiRequest(`/uploads/${session.id}/complete`, {
         method: "POST",
         body: JSON.stringify({
@@ -674,6 +700,19 @@ export function UploadManager() {
                       </span>
                       <span>{formatBytes(item.uploadedBytes)} / {formatBytes(item.file.size)}</span>
                     </div>
+                    <label className="upload-poster-field">
+                      <ImageUp />
+                      <span>{item.poster ? item.poster.name : "แนบรูปหน้าปก (ถ้าไม่เลือก ระบบจะสร้างให้อัตโนมัติ)"}</span>
+                      <input
+                        accept="image/jpeg,image/png,image/webp"
+                        disabled={!(["queued", "error"] as UploadStatus[]).includes(item.status)}
+                        onChange={event => {
+                          choosePoster(item.localId, event.target.files?.[0]);
+                          event.target.value = "";
+                        }}
+                        type="file"
+                      />
+                    </label>
                     <div className="progress-track">
                       <i style={{ width: `${item.progress}%` }} />
                     </div>

@@ -4,9 +4,14 @@ import IORedis from "ioredis";
 
 @Injectable()
 export class MediaProcessingQueueService implements OnModuleDestroy {
-  private readonly connection = new IORedis(process.env.REDIS_URL || "redis://localhost:6379", {
+  private readonly connection = new IORedis(
+    process.env.NODE_ENV === "production"
+      ? process.env.REDIS_URL || "redis://localhost:6379"
+      : process.env.LOCAL_REDIS_URL || "redis://localhost:6379",
+    {
     maxRetriesPerRequest: null
-  });
+    }
+  );
   private readonly queue = new Queue("media-processing", { connection: this.connection });
 
   async enqueue(videoId: string) {
@@ -24,6 +29,10 @@ export class MediaProcessingQueueService implements OnModuleDestroy {
       removeOnComplete: true,
       removeOnFail: 100
     });
+  }
+
+  async health() {
+    return (await this.connection.ping()) === "PONG";
   }
 
   async onModuleDestroy() {

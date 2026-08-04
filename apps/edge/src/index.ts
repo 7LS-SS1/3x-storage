@@ -1,5 +1,3 @@
-interface Env { VIDEOS: R2Bucket; MEDIA_SIGNING_SECRET: string; PLAYER_ORIGIN: string; MEDIA_ANALYTICS?: AnalyticsEngineDataset }
-
 const noStoreHeaders = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
 const encoder = new TextEncoder();
 function fromHex(value: string) {

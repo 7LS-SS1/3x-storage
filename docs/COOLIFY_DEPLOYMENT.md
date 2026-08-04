@@ -159,6 +159,10 @@ service `bootstrap-admin` จะสร้างหรืออัปเดต SY
 
 ## 8. Deploy และตรวจสอบ
 
+Coolify deploy จาก branch ที่กำหนดเท่านั้น โดย production ควรชี้ `main` และ commit
+ต้องถูก merge เข้า `main` ก่อน การ force deploy จะ rebuild commit เดิมและไม่ดึงโค้ดจาก
+Draft PR หรือ branch อื่น
+
 Compose จะทำงานตามลำดับ:
 
 1. Redis พร้อมใช้งาน
@@ -167,6 +171,10 @@ Compose จะทำงานตามลำดับ:
 4. API ผ่าน database/Redis/R2 readiness check
 5. Admin ผ่าน database/configuration health check
 6. Worker เริ่มรับคิว
+
+Cloudflare media Worker ไม่ได้อยู่ใน Coolify Compose และต้อง deploy แยกต่างหาก เมื่อมี
+การเปลี่ยน playback/HLS ให้ deploy `apps/edge` ก่อน แล้วจึง redeploy Coolify เพื่อไม่ให้
+manifest รุ่นใหม่อ้าง segment ที่ Edge รุ่นเดิมยังไม่รองรับ
 
 ตรวจสอบ:
 

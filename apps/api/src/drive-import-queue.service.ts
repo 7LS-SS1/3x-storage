@@ -5,7 +5,9 @@ import IORedis from "ioredis";
 @Injectable()
 export class DriveImportQueueService implements OnModuleDestroy {
   private readonly connection = new IORedis(
-    process.env.REDIS_URL || "redis://localhost:6379",
+    process.env.NODE_ENV === "production"
+      ? process.env.REDIS_URL || "redis://localhost:6379"
+      : process.env.LOCAL_REDIS_URL || "redis://localhost:6379",
     {
       maxRetriesPerRequest: null,
       enableReadyCheck: true

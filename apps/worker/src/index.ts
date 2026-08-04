@@ -7,7 +7,10 @@ import {
 } from "./google-drive-import-worker.js";
 import { closeMediaProcessingResources, createMediaProcessingWorker } from "./media-processing-worker.js";
 
-const connection = new IORedis(process.env.REDIS_URL ?? "redis://localhost:6379", { maxRetriesPerRequest: null });
+const redisUrl = process.env.NODE_ENV === "production"
+  ? process.env.REDIS_URL || "redis://localhost:6379"
+  : process.env.LOCAL_REDIS_URL || "redis://localhost:6379";
+const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null, enableReadyCheck: true });
 const worker = createMediaProcessingWorker(connection);
 const googleDriveImportWorker = createGoogleDriveImportWorker(connection);
 const mediaQueue = new Queue("media-processing", { connection });
