@@ -7,6 +7,8 @@ import {
   Clipboard,
   Eye,
   Film,
+  ImageIcon,
+  ImageOff,
   Pencil,
   RefreshCw,
   Search,
@@ -19,6 +21,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/api-client";
+import { MiniPoster } from "./video-poster";
 
 type Role = "SYSTEM" | "ADMIN" | "STAFF";
 
@@ -53,6 +56,7 @@ type VideoItem = {
   previewAvailable: boolean;
   embedUrl: string | null;
   posterAvailable: boolean;
+  posterUrl: string | null;
 };
 
 type VideoResponse = {
@@ -136,6 +140,8 @@ export function VideoLibraryClient({ role }: { role: Role }) {
   const [editCategory, setEditCategory] = useState("");
   const [editDomains, setEditDomains] = useState<Set<string>>(new Set());
   const [editPoster, setEditPoster] = useState<File | null>(null);
+  const [editPosterPreviewUrl, setEditPosterPreviewUrl] = useState<string | null>(null);
+  const [editPosterPreviewFailed, setEditPosterPreviewFailed] = useState(false);
   const [preview, setPreview] = useState<{
     title: string;
     url: string;
@@ -172,6 +178,17 @@ export function VideoLibraryClient({ role }: { role: Role }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setEditPosterPreviewFailed(false);
+    if (!editPoster) {
+      setEditPosterPreviewUrl(null);
+      return;
+    }
+    const previewUrl = URL.createObjectURL(editPoster);
+    setEditPosterPreviewUrl(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [editPoster]);
 
   function updateQuery(changes: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -243,6 +260,7 @@ export function VideoLibraryClient({ role }: { role: Role }) {
     setEditCategory(video.category?.id || "");
     setEditDomains(new Set(video.allowedDomains.map(domain => domain.id)));
     setEditPoster(null);
+    setEditPosterPreviewFailed(false);
   }
 
   async function saveEdit(event: FormEvent) {
@@ -474,7 +492,7 @@ export function VideoLibraryClient({ role }: { role: Role }) {
                       </td>
                       <td>
                         <div className="library-title">
-                          <span className="mini-thumb"><Film /></span>
+                          <MiniPoster title={video.title} url={video.posterUrl} />
                           <span>
                             <strong>{video.title}</strong>
                             <small>{video.originalFilename || "ไม่มีชื่อไฟล์"} • {formatBytes(video.fileSizeBytes)}</small>
@@ -600,6 +618,30 @@ export function VideoLibraryClient({ role }: { role: Role }) {
               <div><span className="section-number">แก้ไขข้อมูล</span><h2>รายละเอียดวิดีโอ</h2></div>
               <button onClick={() => setEditing(null)} type="button"><X /></button>
             </div>
+            <div className="poster-current-card">
+              <div className="poster-current-heading">
+                <span><ImageIcon />รูปหน้าปกที่ใช้อยู่</span>
+                <small className={editPoster ? "poster-state-new" : editing.posterAvailable ? "poster-state-ready" : "poster-state-empty"}>
+                  {editPoster ? "รูปใหม่ที่เลือก" : editing.posterAvailable ? "กำลังใช้งาน" : "ยังไม่มีรูป"}
+                </small>
+              </div>
+              {(editPosterPreviewUrl || editing.posterUrl) && !editPosterPreviewFailed ? (
+                <div className="poster-current-preview">
+                  <img
+                    alt={editPoster ? `ตัวอย่างรูปหน้าปกใหม่ ${editing.title}` : `รูปหน้าปก ${editing.title}`}
+                    onError={() => setEditPosterPreviewFailed(true)}
+                    src={editPosterPreviewUrl || editing.posterUrl || undefined}
+                  />
+                  <span>{editPoster ? "ตัวอย่างก่อนบันทึก" : "รูปปัจจุบัน"}</span>
+                </div>
+              ) : (
+                <div className="poster-current-empty">
+                  <ImageOff />
+                  <strong>ไม่มีรูปหน้าปก</strong>
+                  <small>เลือกไฟล์ด้านล่างเพื่อเพิ่มรูปหน้าปกให้วิดีโอนี้</small>
+                </div>
+              )}
+            </div>
             <label>ชื่อวิดีโอ
               <input
                 maxLength={200}
@@ -616,7 +658,7 @@ export function VideoLibraryClient({ role }: { role: Role }) {
                 ))}
               </select>
             </label>
-            <label>รูปหน้าปก
+            <label>อัปเดตรูปหน้าปก
               <span className="poster-upload-field">
                 <ImageUp />
                 <input
@@ -624,7 +666,10 @@ export function VideoLibraryClient({ role }: { role: Role }) {
                   onChange={event => setEditPoster(event.target.files?.[0] || null)}
                   type="file"
                 />
-                <small>{editPoster ? editPoster.name : editing.posterAvailable ? "มีรูปหน้าปกแล้ว — เลือกไฟล์เพื่อเปลี่ยน" : "JPG, PNG หรือ WebP (สูงสุด 8 MB)"}</small>
+                <span>
+                  <b>{editPoster ? editPoster.name : editing.posterAvailable ? "เลือกรูปใหม่เพื่อเปลี่ยนหน้าปก" : "เลือกรูปหน้าปก"}</b>
+                  <small>{editPoster ? "รูปนี้จะแทนที่รูปเดิมเมื่อกดบันทึก" : "JPG, PNG หรือ WebP • สูงสุด 8 MB"}</small>
+                </span>
               </span>
             </label>
             {role !== "STAFF" && (
