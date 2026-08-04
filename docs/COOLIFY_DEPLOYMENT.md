@@ -106,6 +106,8 @@ corepack pnpm secrets:generate
 - `SESSION_COOKIE_NAME` ใน production ต้องขึ้นต้นด้วย `__Host-`
 - `APP_URL`, `ADMIN_URL`, `PLAYER_URL` และ `MEDIA_URL` ต้องเป็น HTTPS
 - `MEDIA_SIGNING_SECRET` ต้องตรงกับ secret ของ Cloudflare Worker
+- ระบบส่ง `REDIS_PASSWORD` แยกจาก `REDIS_URL` ภายใน Compose เพื่อให้รหัสผ่านที่มี
+  อักขระพิเศษทำงานได้โดยไม่ต้อง URL-encode
 
 ## 5. R2 และ Cloudflare Worker
 

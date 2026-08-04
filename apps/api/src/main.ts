@@ -19,7 +19,8 @@ async function bootstrap() {
     "MEDIA_SIGNING_SECRET",
     "IP_HASH_SALT",
     "SESSION_SECRET",
-    "CSRF_SECRET"
+    "CSRF_SECRET",
+    ...(process.env.NODE_ENV === "production" ? ["REDIS_PASSWORD" as const] : [])
   ] as const;
   for (const key of required) {
     const value = process.env[key]?.trim();

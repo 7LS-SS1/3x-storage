@@ -109,7 +109,7 @@ WORKDIR /app
 COPY --from=build --chown=node:node /prod/worker ./
 USER node
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=5 \
-  CMD node -e "const Redis=require('ioredis');const client=new Redis(process.env.REDIS_URL,{lazyConnect:true,maxRetriesPerRequest:1});client.connect().then(()=>client.ping()).then(result=>{if(result!=='PONG')process.exitCode=1}).catch(()=>{process.exitCode=1}).finally(()=>client.disconnect())"
+  CMD node -e "const Redis=require('ioredis');const client=new Redis(process.env.REDIS_URL,{lazyConnect:true,maxRetriesPerRequest:1,password:process.env.REDIS_PASSWORD});client.connect().then(()=>client.ping()).then(result=>{if(result!=='PONG')process.exitCode=1}).catch(error=>{console.error(error.message);process.exitCode=1}).finally(()=>client.disconnect())"
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "dist/index.js"]
 
