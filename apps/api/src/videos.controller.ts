@@ -117,7 +117,7 @@ function playerBaseUrl() {
   }
 }
 
-function serializeVideo(video: VideoListItem) {
+function serializeVideo(video: VideoListItem, posterUrl: string | null = null) {
   const player = playerBaseUrl();
   return {
     id: video.id,
@@ -135,6 +135,7 @@ function serializeVideo(video: VideoListItem) {
     uploadedBy: video.uploadedBy,
     processingError: video.processingError,
     posterAvailable: Boolean(video.posterKey),
+    posterUrl,
     previewAvailable: video.files.some(file =>
       ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"].includes(file.role)
     ),
@@ -289,8 +290,16 @@ export class VideosController {
         }
       })
     ]);
+    const data = await Promise.all(videos.map(async video =>
+      serializeVideo(
+        video,
+        video.posterKey
+          ? await this.storage.createReadUrl(video.posterKey, 600)
+          : null
+      )
+    ));
     return {
-      data: videos.map(video => serializeVideo(video)),
+      data,
       pagination: {
         page,
         pageSize,
@@ -331,7 +340,14 @@ export class VideosController {
       }
     });
     if (!video) throw new NotFoundException("ไม่พบวิดีโอ");
-    return { video: serializeVideo(video) };
+    return {
+      video: serializeVideo(
+        video,
+        video.posterKey
+          ? await this.storage.createReadUrl(video.posterKey, 600)
+          : null
+      )
+    };
   }
 
   @Patch(":id")

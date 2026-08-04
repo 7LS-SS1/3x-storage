@@ -89,3 +89,55 @@ describe("VideosController STAFF deletion permissions", () => {
     });
   });
 });
+
+describe("VideosController poster URLs", () => {
+  it("signs available covers for the video library and preserves the empty state", async () => {
+    const baseVideo = {
+      publicId: "public-video",
+      title: "วิดีโอทดสอบ",
+      status: "READY" as const,
+      durationSeconds: 30,
+      playCount: 0n,
+      fileSize: 1024n,
+      mimeType: "video/mp4",
+      originalFilename: "video.mp4",
+      uploadedAt: new Date("2026-08-04T00:00:00.000Z"),
+      createdAt: new Date("2026-08-04T00:00:00.000Z"),
+      processingError: null,
+      category: null,
+      allowedDomains: [],
+      uploadedBy: { id: "user-test", name: "Tester", email: "test@example.test" },
+      files: [{ id: "file-test", role: "PLAYBACK", mimeType: "video/mp4" }]
+    };
+    const prisma = {
+      video: {
+        count: vi.fn().mockResolvedValue(2),
+        findMany: vi.fn().mockResolvedValue([
+          { ...baseVideo, id: "video-with-cover", posterKey: "images/video-with-cover/poster.webp" },
+          { ...baseVideo, id: "video-without-cover", posterKey: null }
+        ])
+      },
+      $transaction: vi.fn((operations: Promise<unknown>[]) => Promise.all(operations))
+    } as unknown as PrismaService;
+    const createReadUrl = vi.fn().mockResolvedValue("https://storage.example.test/signed-cover");
+    const storage = { createReadUrl } as unknown as StorageService;
+    const controller = new VideosController(prisma, storage);
+
+    const result = await controller.list({});
+
+    expect(createReadUrl).toHaveBeenCalledOnce();
+    expect(createReadUrl).toHaveBeenCalledWith("images/video-with-cover/poster.webp", 600);
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        id: "video-with-cover",
+        posterAvailable: true,
+        posterUrl: "https://storage.example.test/signed-cover"
+      }),
+      expect.objectContaining({
+        id: "video-without-cover",
+        posterAvailable: false,
+        posterUrl: null
+      })
+    ]);
+  });
+});
