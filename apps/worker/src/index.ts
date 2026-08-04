@@ -1,16 +1,13 @@
 import "./load-env.js";
 import { Queue } from "bullmq";
-import IORedis from "ioredis";
 import {
   closeGoogleDriveImportResources,
   createGoogleDriveImportWorker
 } from "./google-drive-import-worker.js";
 import { closeMediaProcessingResources, createMediaProcessingWorker } from "./media-processing-worker.js";
+import { createRedisConnection } from "./redis-connection.js";
 
-const redisUrl = process.env.NODE_ENV === "production"
-  ? process.env.REDIS_URL || "redis://localhost:6379"
-  : process.env.LOCAL_REDIS_URL || "redis://localhost:6379";
-const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null, enableReadyCheck: true });
+const connection = createRedisConnection();
 const worker = createMediaProcessingWorker(connection);
 const googleDriveImportWorker = createGoogleDriveImportWorker(connection);
 const mediaQueue = new Queue("media-processing", { connection });

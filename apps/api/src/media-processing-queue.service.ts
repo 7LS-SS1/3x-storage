@@ -1,17 +1,10 @@
 import { Injectable, OnModuleDestroy } from "@nestjs/common";
 import { Queue } from "bullmq";
-import IORedis from "ioredis";
+import { createRedisConnection } from "./redis-connection";
 
 @Injectable()
 export class MediaProcessingQueueService implements OnModuleDestroy {
-  private readonly connection = new IORedis(
-    process.env.NODE_ENV === "production"
-      ? process.env.REDIS_URL || "redis://localhost:6379"
-      : process.env.LOCAL_REDIS_URL || "redis://localhost:6379",
-    {
-    maxRetriesPerRequest: null
-    }
-  );
+  private readonly connection = createRedisConnection();
   private readonly queue = new Queue("media-processing", { connection: this.connection });
 
   async enqueue(videoId: string) {
