@@ -382,6 +382,68 @@ describe("PlaybackController authorization refresh", () => {
     }
   });
 
+  it("redirects a stable thumbnail URL to a fresh signed cover while allow-all is enabled", async () => {
+    const prisma = {
+      systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: true }) },
+      video: {
+        findFirst: vi.fn().mockResolvedValue({
+          publicId: "video-public-test",
+          posterKey: "images/video-public-test/poster.webp",
+          files: [{
+            id: "file-original-test",
+            storageKey: "videos/original/video-test.mp4",
+            role: "ORIGINAL"
+          }],
+          allowedDomains: []
+        })
+      }
+    } as unknown as PrismaService;
+    const controller = new PlaybackController(prisma);
+    const setHeader = vi.fn();
+    const redirect = vi.fn();
+
+    await controller.poster(
+      undefined,
+      "video-public-test",
+      { setHeader, redirect } as never
+    );
+
+    expect(redirect).toHaveBeenCalledWith(
+      302,
+      expect.stringContaining("images/video-public-test/poster.webp")
+    );
+    expect(redirect.mock.calls[0]?.[1]).toContain("signature=");
+    expect(setHeader).toHaveBeenCalledWith("Cache-Control", "no-store");
+    expect(setHeader).toHaveBeenCalledWith("Referrer-Policy", "no-referrer");
+  });
+
+  it("keeps a stable thumbnail URL protected when allow-all is disabled", async () => {
+    const prisma = {
+      systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: false }) },
+      video: {
+        findFirst: vi.fn().mockResolvedValue({
+          publicId: "video-public-test",
+          posterKey: "images/video-public-test/poster.webp",
+          files: [{
+            id: "file-original-test",
+            storageKey: "videos/original/video-test.mp4",
+            role: "ORIGINAL"
+          }],
+          allowedDomains: []
+        })
+      }
+    } as unknown as PrismaService;
+    const controller = new PlaybackController(prisma);
+    const redirect = vi.fn();
+
+    await expect(controller.poster(
+      undefined,
+      "video-public-test",
+      { setHeader: vi.fn(), redirect } as never
+    )).rejects.toBeInstanceOf(ForbiddenException);
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
   it("stops refreshing an unlisted-domain session after allow-all mode is disabled", async () => {
     const sessionId = "11111111-1111-4111-8111-111111111111";
     const videoPublicId = "video-public-test";

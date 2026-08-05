@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Headers, Post, Res, ServiceUnavailableException } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, Headers, Param, Post, Res, ServiceUnavailableException } from "@nestjs/common";
 import type { Response } from "express";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
@@ -114,6 +114,20 @@ function refererSource(referer: string | undefined) {
   }
 }
 
+type AllowedDomainAssignment = {
+  allowedDomain: { id: string; hostname: string; includeSubdomains: boolean };
+};
+
+function matchAllowedDomain(
+  source: ReturnType<typeof refererSource>,
+  assignments: AllowedDomainAssignment[] | undefined
+) {
+  if (!source || (process.env.NODE_ENV === "production" && !source.secure)) return undefined;
+  return assignments?.find(item =>
+    domainMatches(source.host, item.allowedDomain.hostname, item.allowedDomain.includeSubdomains)
+  );
+}
+
 @Controller("playback")
 export class PlaybackController {
   constructor(private readonly prisma: PrismaService) {}
@@ -165,12 +179,7 @@ export class PlaybackController {
       })
     ]);
     const allowAllDomains = systemConfig?.allowAllDomains ?? false;
-    const allowAllowlistMatch = source && (source.secure || process.env.NODE_ENV !== "production");
-    const match = allowAllowlistMatch
-      ? video?.allowedDomains.find(item =>
-          domainMatches(source.host, item.allowedDomain.hostname, item.allowedDomain.includeSubdomains)
-        )
-      : undefined;
+    const match = matchAllowedDomain(source, video?.allowedDomains);
     const file = video ? preferredFile(video.files) : undefined;
     if (!video || (!allowAllDomains && !match) || !file) {
       throw new ForbiddenException("โดเมนนี้ไม่ได้รับอนุญาตให้เล่นวิดีโอ");
@@ -200,6 +209,68 @@ export class PlaybackController {
     }
     response.setHeader("Cache-Control", "no-store");
     return { playbackSessionId: sessionId, expires, mediaType: file.mimeType, posterUrl, ...grant };
+  }
+
+  @Get("poster/:videoPublicId")
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  async poster(
+    @Headers("referer") referer: string | undefined,
+    @Param("videoPublicId") untrustedVideoPublicId: string,
+    @Res() response: Response
+  ) {
+    const videoPublicId = z.string().regex(/^[A-Za-z0-9_-]{10,128}$/).safeParse(untrustedVideoPublicId);
+    if (!videoPublicId.success) throw new ForbiddenException("ไม่พบรูปหน้าปก");
+    const source = refererSource(referer);
+    const [systemConfig, video] = await Promise.all([
+      this.prisma.systemConfig.findUnique({
+        where: { id: 1 },
+        select: { allowAllDomains: true }
+      }),
+      this.prisma.video.findFirst({
+        where: {
+          publicId: videoPublicId.data,
+          status: { in: ["UPLOADED", "READY"] },
+          deletedAt: null,
+          posterKey: { not: null }
+        },
+        select: {
+          publicId: true,
+          posterKey: true,
+          files: {
+            where: { role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] } },
+            orderBy: { createdAt: "desc" },
+            select: { id: true, storageKey: true, role: true },
+            take: 5
+          },
+          allowedDomains: {
+            where: { allowedDomain: { active: true } },
+            select: { allowedDomain: { select: { id: true, hostname: true, includeSubdomains: true } } }
+          }
+        }
+      })
+    ]);
+    const match = matchAllowedDomain(source, video?.allowedDomains);
+    const file = video ? preferredFile(video.files) : undefined;
+    if (
+      !video?.posterKey ||
+      !file ||
+      (!(systemConfig?.allowAllDomains ?? false) && !match)
+    ) {
+      throw new ForbiddenException("ไม่พบรูปหน้าปก หรือโดเมนนี้ไม่ได้รับอนุญาต");
+    }
+
+    const expires = Math.floor(Date.now() / 1000) + playbackTtlSeconds();
+    const grant = playbackGrant({
+      videoPublicId: video.publicId,
+      fileId: file.id,
+      storageKey: video.posterKey,
+      sessionId: randomUUID(),
+      expires
+    });
+    response.setHeader("Cache-Control", "no-store");
+    response.setHeader("Referrer-Policy", "no-referrer");
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    response.redirect(302, grant.mediaUrl);
   }
 
   @Post("refresh")

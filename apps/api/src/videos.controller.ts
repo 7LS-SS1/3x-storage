@@ -142,6 +142,9 @@ function serializeVideo(video: VideoListItem, posterUrl: string | null = null) {
     processingError: video.processingError,
     posterAvailable: Boolean(video.posterKey),
     posterUrl,
+    thumbnailUrl: video.posterKey && player
+      ? `${player}/backend/playback/poster/${video.publicId}`
+      : null,
     previewAvailable: video.files.some(file =>
       ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"].includes(file.role)
     ),
