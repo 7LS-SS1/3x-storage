@@ -29,6 +29,7 @@ import {
 import { PrismaService } from "./prisma.service";
 import { StorageService } from "./storage.service";
 import { uploadedPosterStorageKey } from "./poster-storage";
+import { createPosterDeliveryUrl } from "./poster-delivery-url";
 
 const listSchema = z
   .object({
@@ -123,8 +124,16 @@ function playerBaseUrl() {
   }
 }
 
+function posterFileId(files: Array<{ id: string; role: string }>) {
+  return files.find(file => file.role === "HLS_MANIFEST")?.id
+    ?? files.find(file => file.role === "PLAYBACK")?.id
+    ?? files.find(file => file.role === "ORIGINAL")?.id
+    ?? null;
+}
+
 function serializeVideo(video: VideoListItem, posterUrl: string | null = null) {
   const player = playerBaseUrl();
+  const fileId = posterFileId(video.files) ?? video.id;
   return {
     id: video.id,
     publicId: video.publicId,
@@ -142,8 +151,12 @@ function serializeVideo(video: VideoListItem, posterUrl: string | null = null) {
     processingError: video.processingError,
     posterAvailable: Boolean(video.posterKey),
     posterUrl,
-    thumbnailUrl: video.posterKey && player
-      ? `${player}/backend/playback/poster/${video.publicId}`
+    thumbnailUrl: video.posterKey && fileId
+      ? createPosterDeliveryUrl({
+          videoPublicId: video.publicId,
+          fileId,
+          storageKey: video.posterKey
+        })
       : null,
     previewAvailable: video.files.some(file =>
       ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"].includes(file.role)
@@ -335,21 +348,30 @@ export class VideosController {
       },
       orderBy: [{ title: "asc" }, { createdAt: "asc" }],
       select: {
+        id: true,
         title: true,
         publicId: true,
         posterKey: true,
+        files: { select: { id: true, role: true } },
         category: { select: { name: true } }
       }
     });
     return {
-      videos: videos.map(video => ({
-        title: video.title,
-        category: video.category?.name ?? "",
-        embedUrl: `${player}/embed/${video.publicId}`,
-        thumbnailUrl: video.posterKey
-          ? `${player}/backend/playback/poster/${video.publicId}`
-          : ""
-      }))
+      videos: videos.map(video => {
+        const fileId = posterFileId(video.files) ?? video.id;
+        return {
+          title: video.title,
+          category: video.category?.name ?? "",
+          embedUrl: `${player}/embed/${video.publicId}`,
+          thumbnailUrl: video.posterKey && fileId
+            ? createPosterDeliveryUrl({
+                videoPublicId: video.publicId,
+                fileId,
+                storageKey: video.posterKey
+              })
+            : ""
+        };
+      })
     };
   }
 

@@ -92,14 +92,22 @@ describe("VideosController STAFF deletion permissions", () => {
 
 describe("VideosController poster URLs", () => {
   const previousPlayerUrl = process.env.PLAYER_URL;
+  const previousMediaUrl = process.env.MEDIA_URL;
+  const previousMediaSecret = process.env.MEDIA_SIGNING_SECRET;
 
   beforeEach(() => {
     process.env.PLAYER_URL = "https://player.example.test";
+    process.env.MEDIA_URL = "https://media.example.test";
+    process.env.MEDIA_SIGNING_SECRET = "s".repeat(32);
   });
 
   afterEach(() => {
     if (previousPlayerUrl === undefined) delete process.env.PLAYER_URL;
     else process.env.PLAYER_URL = previousPlayerUrl;
+    if (previousMediaUrl === undefined) delete process.env.MEDIA_URL;
+    else process.env.MEDIA_URL = previousMediaUrl;
+    if (previousMediaSecret === undefined) delete process.env.MEDIA_SIGNING_SECRET;
+    else process.env.MEDIA_SIGNING_SECRET = previousMediaSecret;
   });
 
   it("signs available covers for the video library and preserves the empty state", async () => {
@@ -143,7 +151,9 @@ describe("VideosController poster URLs", () => {
         id: "video-with-cover",
         posterAvailable: true,
         posterUrl: "https://storage.example.test/signed-cover",
-        thumbnailUrl: "https://player.example.test/backend/playback/poster/public-video"
+        thumbnailUrl: expect.stringMatching(
+          /^https:\/\/media\.example\.test\/images\/video-with-cover\/poster\.webp\?/
+        )
       }),
       expect.objectContaining({
         id: "video-without-cover",
@@ -158,34 +168,45 @@ describe("VideosController poster URLs", () => {
 describe("VideosController export", () => {
   it("returns every requested video with its public embed URL", async () => {
     const previousPlayerUrl = process.env.PLAYER_URL;
+    const previousMediaUrl = process.env.MEDIA_URL;
+    const previousMediaSecret = process.env.MEDIA_SIGNING_SECRET;
     process.env.PLAYER_URL = "https://player.example.test";
+    process.env.MEDIA_URL = "https://media.example.test";
+    process.env.MEDIA_SIGNING_SECRET = "s".repeat(32);
     try {
       const findMany = vi.fn().mockResolvedValue([
         {
+          id: "video-record-one",
           title: "วิดีโอหนึ่ง",
           publicId: "public-video-one",
           posterKey: "images/video-one/poster.webp",
+          files: [],
           category: { name: "บทเรียน" }
         },
         {
+          id: "video-record-two",
           title: "วิดีโอสอง",
           publicId: "public-video-two",
           posterKey: null,
+          files: [{ id: "file-video-two", role: "PLAYBACK" }],
           category: null
         }
       ]);
       const prisma = { video: { findMany } } as unknown as PrismaService;
       const controller = new VideosController(prisma, {} as StorageService);
 
-      await expect(controller.export({
+      const result = await controller.export({
         videoIds: ["video-one", "video-two"]
-      })).resolves.toEqual({
+      });
+      expect(result).toEqual({
         videos: [
           {
             title: "วิดีโอหนึ่ง",
             category: "บทเรียน",
             embedUrl: "https://player.example.test/embed/public-video-one",
-            thumbnailUrl: "https://player.example.test/backend/playback/poster/public-video-one"
+            thumbnailUrl: expect.stringMatching(
+              /^https:\/\/media\.example\.test\/images\/video-one\/poster\.webp\?/
+            )
           },
           {
             title: "วิดีโอสอง",
@@ -195,18 +216,26 @@ describe("VideosController export", () => {
           }
         ]
       });
+      expect(new URL(result.videos[0]!.thumbnailUrl).searchParams.get("fileId"))
+        .toBe("video-record-one");
       expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: { deletedAt: null, id: { in: ["video-one", "video-two"] } },
         select: {
+          id: true,
           title: true,
           publicId: true,
           posterKey: true,
+          files: { select: { id: true, role: true } },
           category: { select: { name: true } }
         }
       }));
     } finally {
       if (previousPlayerUrl === undefined) delete process.env.PLAYER_URL;
       else process.env.PLAYER_URL = previousPlayerUrl;
+      if (previousMediaUrl === undefined) delete process.env.MEDIA_URL;
+      else process.env.MEDIA_URL = previousMediaUrl;
+      if (previousMediaSecret === undefined) delete process.env.MEDIA_SIGNING_SECRET;
+      else process.env.MEDIA_SIGNING_SECRET = previousMediaSecret;
     }
   });
 });

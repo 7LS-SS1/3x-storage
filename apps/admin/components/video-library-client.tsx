@@ -241,14 +241,23 @@ export function VideoLibraryClient({ role }: { role: Role }) {
   }
 
   async function copyThumbnailUrl(video: VideoItem) {
-    if (!video.posterAvailable || !video.thumbnailUrl) {
-      setError(video.posterAvailable
-        ? "ยังไม่ได้ตั้งค่า PLAYER_URL"
-        : `“${video.title}” ยังไม่มีรูปหน้าปก`);
+    if (!video.posterAvailable) {
+      setError(`“${video.title}” ยังไม่มีรูปหน้าปก`);
+      return;
+    }
+    let thumbnailUrl: string;
+    try {
+      const result = await apiRequest<{ video: VideoItem }>(`/videos/${video.id}`);
+      if (!result.video.thumbnailUrl) throw new Error("ไม่สามารถสร้าง URL รูปหน้าปกได้");
+      thumbnailUrl = result.video.thumbnailUrl;
+    } catch (requestError) {
+      setError(requestError instanceof Error
+        ? requestError.message
+        : "ไม่สามารถสร้าง URL รูปหน้าปกได้");
       return;
     }
     try {
-      await navigator.clipboard.writeText(video.thumbnailUrl);
+      await navigator.clipboard.writeText(thumbnailUrl);
       setNotice(`คัดลอก URL รูปหน้าปกของ “${video.title}” แล้ว`);
       window.setTimeout(() => setNotice(""), 3000);
     } catch {
