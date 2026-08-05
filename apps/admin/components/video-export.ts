@@ -2,6 +2,7 @@ export type VideoExportRow = {
   title: string;
   category: string;
   embedUrl: string;
+  thumbnailUrl: string;
 };
 
 export function iframeForVideo(embedUrl: string) {
@@ -18,10 +19,11 @@ export function createVideosCsv(videos: VideoExportRow[]) {
     [
       csvCell(video.title),
       csvCell(video.category),
-      csvCell(iframeForVideo(video.embedUrl))
+      csvCell(iframeForVideo(video.embedUrl)),
+      csvCell(video.thumbnailUrl)
     ].join(",")
   );
-  return `\uFEFFtitle,หมวดหมู่,videos url\r\n${rows.join("\r\n")}${rows.length ? "\r\n" : ""}`;
+  return `\uFEFFtitle,หมวดหมู่,videos url,url images\r\n${rows.join("\r\n")}${rows.length ? "\r\n" : ""}`;
 }
 
 export function downloadVideosCsv(videos: VideoExportRow[], filename: string) {

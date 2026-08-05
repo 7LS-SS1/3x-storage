@@ -164,11 +164,13 @@ describe("VideosController export", () => {
         {
           title: "วิดีโอหนึ่ง",
           publicId: "public-video-one",
+          posterKey: "images/video-one/poster.webp",
           category: { name: "บทเรียน" }
         },
         {
           title: "วิดีโอสอง",
           publicId: "public-video-two",
+          posterKey: null,
           category: null
         }
       ]);
@@ -182,12 +184,14 @@ describe("VideosController export", () => {
           {
             title: "วิดีโอหนึ่ง",
             category: "บทเรียน",
-            embedUrl: "https://player.example.test/embed/public-video-one"
+            embedUrl: "https://player.example.test/embed/public-video-one",
+            thumbnailUrl: "https://player.example.test/backend/playback/poster/public-video-one"
           },
           {
             title: "วิดีโอสอง",
             category: "",
-            embedUrl: "https://player.example.test/embed/public-video-two"
+            embedUrl: "https://player.example.test/embed/public-video-two",
+            thumbnailUrl: ""
           }
         ]
       });
@@ -196,6 +200,7 @@ describe("VideosController export", () => {
         select: {
           title: true,
           publicId: true,
+          posterKey: true,
           category: { select: { name: true } }
         }
       }));

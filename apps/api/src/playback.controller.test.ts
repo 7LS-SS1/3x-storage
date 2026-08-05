@@ -414,6 +414,10 @@ describe("PlaybackController authorization refresh", () => {
     );
     expect(redirect.mock.calls[0]?.[1]).toContain("signature=");
     expect(setHeader).toHaveBeenCalledWith("Cache-Control", "no-store");
+    expect(setHeader).toHaveBeenCalledWith(
+      "Cross-Origin-Resource-Policy",
+      "cross-origin"
+    );
     expect(setHeader).toHaveBeenCalledWith("Referrer-Policy", "no-referrer");
   });
 

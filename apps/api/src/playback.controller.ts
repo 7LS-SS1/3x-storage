@@ -268,6 +268,7 @@ export class PlaybackController {
       expires
     });
     response.setHeader("Cache-Control", "no-store");
+    response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     response.setHeader("Referrer-Policy", "no-referrer");
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.redirect(302, grant.mediaUrl);
