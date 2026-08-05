@@ -197,6 +197,50 @@ describe("PlaybackController authorization refresh", () => {
     );
   });
 
+  it("authorizes a direct link without a referer while allow-all mode is enabled", async () => {
+    const create = vi.fn().mockResolvedValue({});
+    const prisma = {
+      systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: true }) },
+      video: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "video-database-id",
+          publicId: "video-public-test",
+          posterKey: null,
+          files: [{
+            id: "file-original-test",
+            storageKey: "videos/original/video-test.mp4",
+            role: "ORIGINAL",
+            mimeType: "video/mp4"
+          }],
+          allowedDomains: []
+        })
+      },
+      playbackSession: { create }
+    } as unknown as PrismaService;
+    const controller = new PlaybackController(prisma);
+    const setHeader = vi.fn();
+
+    await expect(controller.authorize(
+      undefined,
+      { videoPublicId: "video-public-test", fileId: "file-original-test" },
+      { setHeader } as never
+    )).resolves.toMatchObject({ mediaType: "video/mp4" });
+
+    expect(create).toHaveBeenCalledWith({
+      data: {
+        id: expect.any(String),
+        videoId: "video-database-id",
+        allowedDomainId: null,
+        expiresAt: expect.any(Date)
+      }
+    });
+    expect(setHeader).not.toHaveBeenCalledWith(
+      "Content-Security-Policy",
+      expect.any(String)
+    );
+    expect(setHeader).toHaveBeenCalledWith("Cache-Control", "no-store");
+  });
+
   it("rejects an unlisted domain while allow-all mode is disabled", async () => {
     const create = vi.fn().mockResolvedValue({});
     const prisma = {
@@ -220,6 +264,35 @@ describe("PlaybackController authorization refresh", () => {
 
     await expect(controller.authorize(
       "https://external.example.test/watch",
+      { videoPublicId: "video-public-test", fileId: "file-original-test" },
+      { setHeader: vi.fn() } as never
+    )).rejects.toBeInstanceOf(ForbiddenException);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a direct link without a referer while allow-all mode is disabled", async () => {
+    const create = vi.fn().mockResolvedValue({});
+    const prisma = {
+      systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: false }) },
+      video: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "video-database-id",
+          publicId: "video-public-test",
+          posterKey: null,
+          files: [{
+            id: "file-original-test",
+            storageKey: "videos/original/video-test.mp4",
+            role: "ORIGINAL"
+          }],
+          allowedDomains: []
+        })
+      },
+      playbackSession: { create }
+    } as unknown as PrismaService;
+    const controller = new PlaybackController(prisma);
+
+    await expect(controller.authorize(
+      undefined,
       { videoPublicId: "video-public-test", fileId: "file-original-test" },
       { setHeader: vi.fn() } as never
     )).rejects.toBeInstanceOf(ForbiddenException);

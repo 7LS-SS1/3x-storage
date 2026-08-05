@@ -100,7 +100,7 @@ function playbackGrant(input: {
 }
 
 function refererHost(referer: string | undefined) {
-  if (!referer) throw new ForbiddenException("โดเมนนี้ไม่ได้รับอนุญาตให้เล่นวิดีโอ");
+  if (!referer) return null;
   try {
     const url = new URL(referer);
     if (url.protocol !== "https:" && process.env.NODE_ENV === "production") throw new Error("HTTPS_REQUIRED");
@@ -161,9 +161,11 @@ export class PlaybackController {
       })
     ]);
     const allowAllDomains = systemConfig?.allowAllDomains ?? false;
-    const match = video?.allowedDomains.find(item =>
-      domainMatches(host, item.allowedDomain.hostname, item.allowedDomain.includeSubdomains)
-    );
+    const match = host
+      ? video?.allowedDomains.find(item =>
+          domainMatches(host, item.allowedDomain.hostname, item.allowedDomain.includeSubdomains)
+        )
+      : undefined;
     const file = video ? preferredFile(video.files) : undefined;
     if (!video || (!allowAllDomains && !match) || !file) {
       throw new ForbiddenException("โดเมนนี้ไม่ได้รับอนุญาตให้เล่นวิดีโอ");
@@ -188,7 +190,9 @@ export class PlaybackController {
         expiresAt: new Date(expires * 1000)
       }
     });
-    response.setHeader("Content-Security-Policy", `frame-ancestors https://${host}`);
+    if (host) {
+      response.setHeader("Content-Security-Policy", `frame-ancestors https://${host}`);
+    }
     response.setHeader("Cache-Control", "no-store");
     return { playbackSessionId: sessionId, expires, mediaType: file.mimeType, posterUrl, ...grant };
   }
