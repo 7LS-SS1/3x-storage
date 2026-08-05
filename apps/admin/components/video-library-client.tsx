@@ -59,6 +59,7 @@ type VideoItem = {
   embedUrl: string | null;
   posterAvailable: boolean;
   posterUrl: string | null;
+  thumbnailUrl: string | null;
 };
 
 type VideoResponse = {
@@ -233,6 +234,22 @@ export function VideoLibraryClient({ role }: { role: Role }) {
     try {
       await navigator.clipboard.writeText(snippet);
       setNotice(`คัดลอก iframe ของ “${video.title}” แล้ว`);
+      window.setTimeout(() => setNotice(""), 3000);
+    } catch {
+      setError("เบราว์เซอร์ไม่อนุญาตให้คัดลอก กรุณาตรวจสิทธิ์ Clipboard");
+    }
+  }
+
+  async function copyThumbnailUrl(video: VideoItem) {
+    if (!video.posterAvailable || !video.thumbnailUrl) {
+      setError(video.posterAvailable
+        ? "ยังไม่ได้ตั้งค่า PLAYER_URL"
+        : `“${video.title}” ยังไม่มีรูปหน้าปก`);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(video.thumbnailUrl);
+      setNotice(`คัดลอก URL รูปหน้าปกของ “${video.title}” แล้ว`);
       window.setTimeout(() => setNotice(""), 3000);
     } catch {
       setError("เบราว์เซอร์ไม่อนุญาตให้คัดลอก กรุณาตรวจสิทธิ์ Clipboard");
@@ -571,6 +588,14 @@ export function VideoLibraryClient({ role }: { role: Role }) {
                         <div className="row-actions">
                           <button onClick={() => void copyEmbed(video)} title="คัดลอก iframe" type="button">
                             <Clipboard /><span>คัดลอก</span>
+                          </button>
+                          <button
+                            disabled={!video.posterAvailable || !video.thumbnailUrl}
+                            onClick={() => void copyThumbnailUrl(video)}
+                            title={video.posterAvailable ? "คัดลอก URL รูปหน้าปก" : "ยังไม่มีรูปหน้าปก"}
+                            type="button"
+                          >
+                            <ImageIcon /><span>URL ปก</span>
                           </button>
                           <button
                             disabled={!video.previewAvailable || working}

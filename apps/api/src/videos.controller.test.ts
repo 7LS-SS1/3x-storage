@@ -1,5 +1,5 @@
 import { Role } from "@prisma/client";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminRequest } from "./admin-auth.guard";
 import { PrismaService } from "./prisma.service";
 import { StorageService } from "./storage.service";
@@ -91,6 +91,17 @@ describe("VideosController STAFF deletion permissions", () => {
 });
 
 describe("VideosController poster URLs", () => {
+  const previousPlayerUrl = process.env.PLAYER_URL;
+
+  beforeEach(() => {
+    process.env.PLAYER_URL = "https://player.example.test";
+  });
+
+  afterEach(() => {
+    if (previousPlayerUrl === undefined) delete process.env.PLAYER_URL;
+    else process.env.PLAYER_URL = previousPlayerUrl;
+  });
+
   it("signs available covers for the video library and preserves the empty state", async () => {
     const baseVideo = {
       publicId: "public-video",
@@ -131,12 +142,14 @@ describe("VideosController poster URLs", () => {
       expect.objectContaining({
         id: "video-with-cover",
         posterAvailable: true,
-        posterUrl: "https://storage.example.test/signed-cover"
+        posterUrl: "https://storage.example.test/signed-cover",
+        thumbnailUrl: "https://player.example.test/backend/playback/poster/public-video"
       }),
       expect.objectContaining({
         id: "video-without-cover",
         posterAvailable: false,
-        posterUrl: null
+        posterUrl: null,
+        thumbnailUrl: null
       })
     ]);
   });
