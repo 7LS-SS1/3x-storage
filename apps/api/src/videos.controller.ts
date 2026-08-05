@@ -337,6 +337,7 @@ export class VideosController {
       select: {
         title: true,
         publicId: true,
+        posterKey: true,
         category: { select: { name: true } }
       }
     });
@@ -344,7 +345,10 @@ export class VideosController {
       videos: videos.map(video => ({
         title: video.title,
         category: video.category?.name ?? "",
-        embedUrl: `${player}/embed/${video.publicId}`
+        embedUrl: `${player}/embed/${video.publicId}`,
+        thumbnailUrl: video.posterKey
+          ? `${player}/backend/playback/poster/${video.publicId}`
+          : ""
       }))
     };
   }

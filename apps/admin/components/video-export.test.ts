@@ -6,20 +6,23 @@ describe("video CSV export", () => {
     const csv = createVideosCsv([{
       title: "วิดีโอ, \"ทดสอบ\"",
       category: "บทเรียน, พื้นฐาน",
-      embedUrl: "https://player.example.test/embed/public-video"
+      embedUrl: "https://player.example.test/embed/public-video",
+      thumbnailUrl: "https://player.example.test/backend/playback/poster/public-video"
     }]);
 
-    expect(csv).toContain("\uFEFFtitle,หมวดหมู่,videos url\r\n");
+    expect(csv).toContain("\uFEFFtitle,หมวดหมู่,videos url,url images\r\n");
     expect(csv).toContain('"วิดีโอ, ""ทดสอบ"""');
     expect(csv).toContain('"บทเรียน, พื้นฐาน"');
     expect(csv).toContain('"<iframe src=""https://player.example.test/embed/public-video""');
+    expect(csv).toContain('"https://player.example.test/backend/playback/poster/public-video"');
   });
 
   it("neutralizes spreadsheet formulas in video titles", () => {
     const csv = createVideosCsv([{
       title: "=HYPERLINK(\"https://malicious.example\")",
       category: "+SUM(1,1)",
-      embedUrl: "https://player.example.test/embed/public-video"
+      embedUrl: "https://player.example.test/embed/public-video",
+      thumbnailUrl: ""
     }]);
 
     expect(csv).toContain('"\'=HYPERLINK(');
