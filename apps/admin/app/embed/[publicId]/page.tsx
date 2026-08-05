@@ -62,20 +62,16 @@ export default async function EmbedPage({
 
   const requestHeaders = await headers();
   const parentReferer = requestHeaders.get("referer");
-  if (!parentReferer) {
-    return (
-      <EmbedError message="กรุณาเปิดวิดีโอนี้ผ่าน iframe จากโดเมนที่ได้รับอนุญาต" />
-    );
-  }
 
   const apiBaseUrl = new URL(process.env.API_URL || "http://localhost:4000").origin;
+  const authorizationHeaders: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+  if (parentReferer) authorizationHeaders.Referer = parentReferer;
   const response = await fetch(`${apiBaseUrl}/api/v1/playback/authorize`, {
     method: "POST",
     cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      Referer: parentReferer
-    },
+    headers: authorizationHeaders,
     body: JSON.stringify({
       videoPublicId: publicId,
       fileId: file.id

@@ -99,14 +99,18 @@ function playbackGrant(input: {
   return { mediaUrl: mediaUrl.toString(), eventToken };
 }
 
-function refererHost(referer: string | undefined) {
-  if (!referer) throw new ForbiddenException("โดเมนนี้ไม่ได้รับอนุญาตให้เล่นวิดีโอ");
+function refererSource(referer: string | undefined) {
+  if (!referer) return null;
   try {
     const url = new URL(referer);
-    if (url.protocol !== "https:" && process.env.NODE_ENV === "production") throw new Error("HTTPS_REQUIRED");
-    return normalizeDomain(url.hostname);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return {
+      host: normalizeDomain(url.hostname),
+      origin: url.origin,
+      secure: url.protocol === "https:"
+    };
   } catch {
-    throw new ForbiddenException("ไม่สามารถตรวจสอบโดเมนต้นทางได้");
+    return null;
   }
 }
 
@@ -123,7 +127,7 @@ export class PlaybackController {
   ) {
     const parsed = authorizeSchema.safeParse(untrustedBody);
     if (!parsed.success) throw new ForbiddenException("คำขอรับชมไม่ถูกต้อง");
-    const host = refererHost(referer);
+    const source = refererSource(referer);
     const [systemConfig, video] = await Promise.all([
       this.prisma.systemConfig.findUnique({
         where: { id: 1 },
@@ -161,9 +165,12 @@ export class PlaybackController {
       })
     ]);
     const allowAllDomains = systemConfig?.allowAllDomains ?? false;
-    const match = video?.allowedDomains.find(item =>
-      domainMatches(host, item.allowedDomain.hostname, item.allowedDomain.includeSubdomains)
-    );
+    const allowAllowlistMatch = source && (source.secure || process.env.NODE_ENV !== "production");
+    const match = allowAllowlistMatch
+      ? video?.allowedDomains.find(item =>
+          domainMatches(source.host, item.allowedDomain.hostname, item.allowedDomain.includeSubdomains)
+        )
+      : undefined;
     const file = video ? preferredFile(video.files) : undefined;
     if (!video || (!allowAllDomains && !match) || !file) {
       throw new ForbiddenException("โดเมนนี้ไม่ได้รับอนุญาตให้เล่นวิดีโอ");
@@ -188,7 +195,9 @@ export class PlaybackController {
         expiresAt: new Date(expires * 1000)
       }
     });
-    response.setHeader("Content-Security-Policy", `frame-ancestors https://${host}`);
+    if (source) {
+      response.setHeader("Content-Security-Policy", `frame-ancestors ${source.origin}`);
+    }
     response.setHeader("Cache-Control", "no-store");
     return { playbackSessionId: sessionId, expires, mediaType: file.mimeType, posterUrl, ...grant };
   }

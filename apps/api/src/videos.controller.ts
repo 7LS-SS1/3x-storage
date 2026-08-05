@@ -331,11 +331,16 @@ export class VideosController {
         ...(videoIds ? { id: { in: videoIds } } : {})
       },
       orderBy: [{ title: "asc" }, { createdAt: "asc" }],
-      select: { title: true, publicId: true }
+      select: {
+        title: true,
+        publicId: true,
+        category: { select: { name: true } }
+      }
     });
     return {
       videos: videos.map(video => ({
         title: video.title,
+        category: video.category?.name ?? "",
         embedUrl: `${player}/embed/${video.publicId}`
       }))
     };

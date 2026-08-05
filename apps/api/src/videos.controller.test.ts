@@ -148,8 +148,16 @@ describe("VideosController export", () => {
     process.env.PLAYER_URL = "https://player.example.test";
     try {
       const findMany = vi.fn().mockResolvedValue([
-        { title: "วิดีโอหนึ่ง", publicId: "public-video-one" },
-        { title: "วิดีโอสอง", publicId: "public-video-two" }
+        {
+          title: "วิดีโอหนึ่ง",
+          publicId: "public-video-one",
+          category: { name: "บทเรียน" }
+        },
+        {
+          title: "วิดีโอสอง",
+          publicId: "public-video-two",
+          category: null
+        }
       ]);
       const prisma = { video: { findMany } } as unknown as PrismaService;
       const controller = new VideosController(prisma, {} as StorageService);
@@ -158,12 +166,25 @@ describe("VideosController export", () => {
         videoIds: ["video-one", "video-two"]
       })).resolves.toEqual({
         videos: [
-          { title: "วิดีโอหนึ่ง", embedUrl: "https://player.example.test/embed/public-video-one" },
-          { title: "วิดีโอสอง", embedUrl: "https://player.example.test/embed/public-video-two" }
+          {
+            title: "วิดีโอหนึ่ง",
+            category: "บทเรียน",
+            embedUrl: "https://player.example.test/embed/public-video-one"
+          },
+          {
+            title: "วิดีโอสอง",
+            category: "",
+            embedUrl: "https://player.example.test/embed/public-video-two"
+          }
         ]
       });
       expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: { deletedAt: null, id: { in: ["video-one", "video-two"] } }
+        where: { deletedAt: null, id: { in: ["video-one", "video-two"] } },
+        select: {
+          title: true,
+          publicId: true,
+          category: { select: { name: true } }
+        }
       }));
     } finally {
       if (previousPlayerUrl === undefined) delete process.env.PLAYER_URL;
