@@ -19,6 +19,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { randomUUID } from "node:crypto";
 import { VideoStatus } from "@prisma/client";
 import { z } from "zod";
+import { Throttle } from "@nestjs/throttler";
 import {
   AdminSessionGuard,
   canManageAllVideos,
@@ -72,6 +73,11 @@ const bulkCategorySchema = z
 const bulkDeleteSchema = z
   .object({
     videoIds: z.array(z.string().min(1).max(128)).min(1).max(100)
+  })
+  .strict();
+const exportSchema = z
+  .object({
+    videoIds: z.array(z.string().min(1).max(128)).min(1).max(100).optional()
   })
   .strict();
 
@@ -306,6 +312,32 @@ export class VideosController {
         total,
         totalPages: Math.max(1, Math.ceil(total / pageSize))
       }
+    };
+  }
+
+  @Post("export")
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async export(@Body() body: unknown) {
+    const parsed = exportSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("รายการวิดีโอสำหรับ export ไม่ถูกต้อง");
+    const player = playerBaseUrl();
+    if (!player) throw new ConflictException("ยังไม่ได้ตั้งค่า PLAYER_URL");
+    const videoIds = parsed.data.videoIds
+      ? [...new Set(parsed.data.videoIds)]
+      : undefined;
+    const videos = await this.prisma.video.findMany({
+      where: {
+        deletedAt: null,
+        ...(videoIds ? { id: { in: videoIds } } : {})
+      },
+      orderBy: [{ title: "asc" }, { createdAt: "asc" }],
+      select: { title: true, publicId: true }
+    });
+    return {
+      videos: videos.map(video => ({
+        title: video.title,
+        embedUrl: `${player}/embed/${video.publicId}`
+      }))
     };
   }
 

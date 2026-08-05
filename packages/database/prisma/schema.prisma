@@ -110,6 +110,7 @@ model SystemConfig {
   id                    Int       @id @default(1)
   siteName              String    @default("สนามคลาวด์")
   uploadsEnabled        Boolean   @default(true)
+  allowAllDomains       Boolean   @default(false)
   defaultCategoryId     String?
   defaultCategory       Category? @relation(fields: [defaultCategoryId], references: [id], onDelete: SetNull)
   supportEmail          String?
@@ -314,8 +315,8 @@ model PlaybackSession {
   id              String        @id
   videoId         String
   video           Video         @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  allowedDomainId String
-  allowedDomain   AllowedDomain @relation(fields: [allowedDomainId], references: [id])
+  allowedDomainId String?
+  allowedDomain   AllowedDomain? @relation(fields: [allowedDomainId], references: [id])
   expiresAt       DateTime
   playEvents      PlayEvent[]
   createdAt       DateTime      @default(now())

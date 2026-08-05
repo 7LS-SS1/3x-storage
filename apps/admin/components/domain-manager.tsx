@@ -7,6 +7,7 @@ import {
   Power,
   RefreshCw,
   Search,
+  ShieldAlert,
   ShieldCheck,
   Trash2,
   X
@@ -38,6 +39,7 @@ export function DomainManager() {
   const [hostname, setHostname] = useState("");
   const [includeSubdomains, setIncludeSubdomains] = useState(false);
   const [active, setActive] = useState(true);
+  const [allowAllDomains, setAllowAllDomains] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -46,10 +48,14 @@ export function DomainManager() {
     if (search.trim()) params.set("search", search.trim());
     if (activeFilter !== "all") params.set("active", activeFilter);
     try {
-      const result = await apiRequest<{ domains: Domain[] }>(
+      const result = await apiRequest<{
+        domains: Domain[];
+        accessPolicy: { allowAllDomains: boolean };
+      }>(
         `/domains${params.size ? `?${params.toString()}` : ""}`
       );
       setDomains(result.domains);
+      setAllowAllDomains(result.accessPolicy.allowAllDomains);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "โหลดโดเมนไม่สำเร็จ");
     } finally {
@@ -117,6 +123,35 @@ export function DomainManager() {
     }
   }
 
+  async function toggleAllowAllDomains() {
+    const next = !allowAllDomains;
+    if (
+      next &&
+      !window.confirm(
+        "เปิดให้ทุกโดเมนเล่นวิดีโอได้ชั่วคราวหรือไม่? การตั้งค่านี้จะเปิดค้างจนกว่าคุณจะปิดเอง"
+      )
+    ) return;
+    setWorking(true);
+    setError("");
+    try {
+      const result = await apiRequest<{
+        accessPolicy: { allowAllDomains: boolean };
+      }>("/domains/access-policy", {
+        method: "PATCH",
+        body: JSON.stringify({ allowAllDomains: next })
+      });
+      setAllowAllDomains(result.accessPolicy.allowAllDomains);
+      setNotice(next
+        ? "เปิดอนุญาตทุกโดเมนแล้ว — ระบบจะเปิดค้างจนกว่าจะปิดเอง"
+        : "ปิดอนุญาตทุกโดเมนแล้ว — กลับมาใช้รายการโดเมนที่กำหนด");
+      window.setTimeout(() => setNotice(""), 4500);
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : "เปลี่ยนนโยบายโดเมนไม่สำเร็จ");
+    } finally {
+      setWorking(false);
+    }
+  }
+
   async function remove(domain: Domain) {
     if (!window.confirm(`ลบโดเมน “${domain.hostname}” หรือไม่?`)) return;
     setWorking(true);
@@ -147,6 +182,33 @@ export function DomainManager() {
       </header>
       {notice && <div className="notice success-notice"><ShieldCheck />{notice}</div>}
       {error && <div className="notice error-notice"><X />{error}</div>}
+
+      <section className={`domain-global-access ${allowAllDomains ? "is-open" : "is-restricted"}`}>
+        <div className="domain-global-icon">
+          {allowAllDomains ? <ShieldAlert /> : <ShieldCheck />}
+        </div>
+        <div>
+          <span className="section-number">GLOBAL ACCESS OVERRIDE</span>
+          <strong>{allowAllDomains ? "กำลังอนุญาตทุกโดเมน" : "ใช้รายการโดเมนที่อนุญาต"}</strong>
+          <p>
+            {allowAllDomains
+              ? "เว็บไซต์ภายนอกทุกโดเมนสามารถฝังและเล่นวิดีโอได้จนกว่าคุณจะปิดการตั้งค่านี้"
+              : "อนุญาตเฉพาะโดเมนที่เปิดใช้งานและผูกกับวิดีโอแต่ละรายการเท่านั้น"}
+          </p>
+        </div>
+        <button
+          aria-checked={allowAllDomains}
+          aria-label="อนุญาตทุกโดเมน"
+          className="domain-access-toggle"
+          disabled={working || loading}
+          onClick={() => void toggleAllowAllDomains()}
+          role="switch"
+          type="button"
+        >
+          <span><i /></span>
+          <b>{allowAllDomains ? "เปิดอยู่" : "ปิดอยู่"}</b>
+        </button>
+      </section>
 
       <section className="panel management-panel">
         <form className="management-toolbar" onSubmit={event => { event.preventDefault(); void load(); }}>
