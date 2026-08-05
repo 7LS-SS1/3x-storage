@@ -28,6 +28,7 @@ describe("PlaybackController authorization refresh", () => {
   it("authorizes an uploaded original when no playback rendition exists yet", async () => {
     const create = vi.fn().mockResolvedValue({});
     const prisma = {
+      systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: false }) },
       video: {
         findFirst: vi.fn().mockResolvedValue({
           id: "video-database-id",
@@ -79,6 +80,7 @@ describe("PlaybackController authorization refresh", () => {
     const previousExpires = Math.floor(Date.now() / 1000) - 30;
     const update = vi.fn().mockResolvedValue({});
     const prisma = {
+      systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: false }) },
       playbackSession: {
         findUnique: vi.fn().mockResolvedValue({
           id: sessionId,
@@ -122,6 +124,7 @@ describe("PlaybackController authorization refresh", () => {
 
   it("rejects a forged refresh token", async () => {
     const prisma = {
+      systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: false }) },
       playbackSession: {
         findUnique: vi.fn().mockResolvedValue({
           id: "11111111-1111-4111-8111-111111111111",
@@ -149,5 +152,110 @@ describe("PlaybackController authorization refresh", () => {
     }, { setHeader: vi.fn() } as never)).rejects.toBeInstanceOf(
       ForbiddenException
     );
+  });
+
+  it("authorizes an unlisted HTTPS domain while allow-all mode is enabled", async () => {
+    const create = vi.fn().mockResolvedValue({});
+    const prisma = {
+      systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: true }) },
+      video: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "video-database-id",
+          publicId: "video-public-test",
+          posterKey: null,
+          files: [{
+            id: "file-original-test",
+            storageKey: "videos/original/video-test.mp4",
+            role: "ORIGINAL",
+            mimeType: "video/mp4"
+          }],
+          allowedDomains: []
+        })
+      },
+      playbackSession: { create }
+    } as unknown as PrismaService;
+    const controller = new PlaybackController(prisma);
+    const setHeader = vi.fn();
+
+    await expect(controller.authorize(
+      "https://external.example.test/watch",
+      { videoPublicId: "video-public-test", fileId: "file-original-test" },
+      { setHeader } as never
+    )).resolves.toMatchObject({ mediaType: "video/mp4" });
+
+    expect(create).toHaveBeenCalledWith({
+      data: {
+        id: expect.any(String),
+        videoId: "video-database-id",
+        allowedDomainId: null,
+        expiresAt: expect.any(Date)
+      }
+    });
+    expect(setHeader).toHaveBeenCalledWith(
+      "Content-Security-Policy",
+      "frame-ancestors https://external.example.test"
+    );
+  });
+
+  it("rejects an unlisted domain while allow-all mode is disabled", async () => {
+    const create = vi.fn().mockResolvedValue({});
+    const prisma = {
+      systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: false }) },
+      video: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "video-database-id",
+          publicId: "video-public-test",
+          posterKey: null,
+          files: [{
+            id: "file-original-test",
+            storageKey: "videos/original/video-test.mp4",
+            role: "ORIGINAL"
+          }],
+          allowedDomains: []
+        })
+      },
+      playbackSession: { create }
+    } as unknown as PrismaService;
+    const controller = new PlaybackController(prisma);
+
+    await expect(controller.authorize(
+      "https://external.example.test/watch",
+      { videoPublicId: "video-public-test", fileId: "file-original-test" },
+      { setHeader: vi.fn() } as never
+    )).rejects.toBeInstanceOf(ForbiddenException);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("stops refreshing an unlisted-domain session after allow-all mode is disabled", async () => {
+    const sessionId = "11111111-1111-4111-8111-111111111111";
+    const videoPublicId = "video-public-test";
+    const previousExpires = Math.floor(Date.now() / 1000) - 30;
+    const prisma = {
+      systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: false }) },
+      playbackSession: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: sessionId,
+          expiresAt: new Date(previousExpires * 1000),
+          createdAt: new Date(Date.now() - 60_000),
+          allowedDomain: null,
+          video: {
+            publicId: videoPublicId,
+            status: "READY",
+            deletedAt: null,
+            files: [{
+              id: "file-playback-test",
+              storageKey: "videos/playback/video-test.mp4",
+              role: "PLAYBACK"
+            }]
+          }
+        })
+      }
+    } as unknown as PrismaService;
+    const controller = new PlaybackController(prisma);
+
+    await expect(controller.refresh({
+      playbackSessionId: sessionId,
+      eventToken: eventToken(sessionId, videoPublicId, previousExpires)
+    }, { setHeader: vi.fn() } as never)).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

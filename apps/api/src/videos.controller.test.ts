@@ -141,3 +141,33 @@ describe("VideosController poster URLs", () => {
     ]);
   });
 });
+
+describe("VideosController export", () => {
+  it("returns every requested video with its public embed URL", async () => {
+    const previousPlayerUrl = process.env.PLAYER_URL;
+    process.env.PLAYER_URL = "https://player.example.test";
+    try {
+      const findMany = vi.fn().mockResolvedValue([
+        { title: "วิดีโอหนึ่ง", publicId: "public-video-one" },
+        { title: "วิดีโอสอง", publicId: "public-video-two" }
+      ]);
+      const prisma = { video: { findMany } } as unknown as PrismaService;
+      const controller = new VideosController(prisma, {} as StorageService);
+
+      await expect(controller.export({
+        videoIds: ["video-one", "video-two"]
+      })).resolves.toEqual({
+        videos: [
+          { title: "วิดีโอหนึ่ง", embedUrl: "https://player.example.test/embed/public-video-one" },
+          { title: "วิดีโอสอง", embedUrl: "https://player.example.test/embed/public-video-two" }
+        ]
+      });
+      expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { deletedAt: null, id: { in: ["video-one", "video-two"] } }
+      }));
+    } finally {
+      if (previousPlayerUrl === undefined) delete process.env.PLAYER_URL;
+      else process.env.PLAYER_URL = previousPlayerUrl;
+    }
+  });
+});

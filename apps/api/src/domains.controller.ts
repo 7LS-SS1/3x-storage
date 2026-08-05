@@ -17,6 +17,7 @@ import {
 import { isIP } from "node:net";
 import { domainToASCII } from "node:url";
 import { z } from "zod";
+import { Throttle } from "@nestjs/throttler";
 import {
   AdminSessionGuard,
   canManageAllVideos,
@@ -40,6 +41,7 @@ const updateSchema = z
   })
   .strict()
   .refine(value => Object.keys(value).length > 0);
+const accessPolicySchema = z.object({ allowAllDomains: z.boolean() }).strict();
 
 function normalizeHostname(value: string) {
   let hostname = value.trim().toLowerCase().replace(/\.$/, "");
@@ -96,31 +98,40 @@ export class DomainsController {
   ) {
     this.assertManager(request);
     const normalizedSearch = search?.trim().slice(0, 120);
-    const domains = await this.prisma.allowedDomain.findMany({
-      where: {
-        ...(normalizedSearch
-          ? { hostname: { contains: normalizedSearch, mode: "insensitive" } }
-          : {}),
-        ...(active === "true" ? { active: true } : {}),
-        ...(active === "false" ? { active: false } : {})
-      },
-      orderBy: [{ active: "desc" }, { hostname: "asc" }],
-      select: {
-        id: true,
-        hostname: true,
-        includeSubdomains: true,
-        active: true,
-        createdAt: true,
-        updatedAt: true,
-        _count: {
-          select: {
-            videos: true,
-            playbackSessions: true
+    const [domains, systemConfig] = await Promise.all([
+      this.prisma.allowedDomain.findMany({
+        where: {
+          ...(normalizedSearch
+            ? { hostname: { contains: normalizedSearch, mode: "insensitive" } }
+            : {}),
+          ...(active === "true" ? { active: true } : {}),
+          ...(active === "false" ? { active: false } : {})
+        },
+        orderBy: [{ active: "desc" }, { hostname: "asc" }],
+        select: {
+          id: true,
+          hostname: true,
+          includeSubdomains: true,
+          active: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: {
+            select: {
+              videos: true,
+              playbackSessions: true
+            }
           }
         }
-      }
-    });
+      }),
+      this.prisma.systemConfig.findUnique({
+        where: { id: 1 },
+        select: { allowAllDomains: true }
+      })
+    ]);
     return {
+      accessPolicy: {
+        allowAllDomains: systemConfig?.allowAllDomains ?? false
+      },
       domains: domains.map(domain => ({
         ...domain,
         videoCount: domain._count.videos,
@@ -165,6 +176,43 @@ export class DomainsController {
       return created;
     });
     return { domain };
+  }
+
+  @Patch("access-policy")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async updateAccessPolicy(@Req() request: AdminRequest, @Body() body: unknown) {
+    this.assertManager(request);
+    const parsed = accessPolicySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("ข้อมูลนโยบายโดเมนไม่ถูกต้อง");
+    const config = await this.prisma.$transaction(async transaction => {
+      const updated = await transaction.systemConfig.upsert({
+        where: { id: 1 },
+        create: {
+          id: 1,
+          allowAllDomains: parsed.data.allowAllDomains,
+          updatedById: request.auth.user.id
+        },
+        update: {
+          allowAllDomains: parsed.data.allowAllDomains,
+          updatedById: request.auth.user.id
+        },
+        select: { allowAllDomains: true, updatedAt: true }
+      });
+      await transaction.auditLog.create({
+        data: {
+          actorUserId: request.auth.user.id,
+          action: parsed.data.allowAllDomains
+            ? "ALLOW_ALL_DOMAINS_ENABLED"
+            : "ALLOW_ALL_DOMAINS_DISABLED",
+          entityType: "SystemConfig",
+          entityId: "1",
+          metadataJson: { allowAllDomains: parsed.data.allowAllDomains },
+          userAgent: request.headers["user-agent"]?.slice(0, 512)
+        }
+      });
+      return updated;
+    });
+    return { accessPolicy: config };
   }
 
   @Patch(":id")

@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clipboard,
+  Download,
   Eye,
   Film,
   ImageIcon,
@@ -21,6 +22,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/api-client";
+import { downloadVideosCsv, type VideoExportRow } from "./video-export";
 import { MiniPoster } from "./video-poster";
 
 type Role = "SYSTEM" | "ADMIN" | "STAFF";
@@ -135,6 +137,7 @@ export function VideoLibraryClient({ role }: { role: Role }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCategory, setBulkCategory] = useState("");
   const [working, setWorking] = useState(false);
+  const [exporting, setExporting] = useState<"selected" | "all" | null>(null);
   const [editing, setEditing] = useState<VideoItem | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editCategory, setEditCategory] = useState("");
@@ -233,6 +236,38 @@ export function VideoLibraryClient({ role }: { role: Role }) {
       window.setTimeout(() => setNotice(""), 3000);
     } catch {
       setError("เบราว์เซอร์ไม่อนุญาตให้คัดลอก กรุณาตรวจสิทธิ์ Clipboard");
+    }
+  }
+
+  async function exportCsv(videoIds?: string[]) {
+    const scope = videoIds ? "selected" : "all";
+    setExporting(scope);
+    setError("");
+    try {
+      const result = await apiRequest<{ videos: VideoExportRow[] }>("/videos/export", {
+        method: "POST",
+        body: JSON.stringify(videoIds ? { videoIds } : {})
+      });
+      if (!result.videos.length) {
+        setError(videoIds ? "ไม่พบวิดีโอที่เลือกสำหรับ export" : "ยังไม่มีวิดีโอสำหรับ export");
+        return;
+      }
+      const date = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Bangkok",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).format(new Date());
+      downloadVideosCsv(
+        result.videos,
+        `videos-${scope === "selected" ? "selected" : "all"}-${date}.csv`
+      );
+      setNotice(`Export CSV สำเร็จ ${result.videos.length.toLocaleString("th-TH")} รายการ`);
+      window.setTimeout(() => setNotice(""), 3500);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "Export CSV ไม่สำเร็จ");
+    } finally {
+      setExporting(null);
     }
   }
 
@@ -375,6 +410,14 @@ export function VideoLibraryClient({ role }: { role: Role }) {
           <button className="icon" onClick={() => void load()} title="โหลดใหม่" type="button">
             <RefreshCw />
           </button>
+          <button
+            className="secondary-button"
+            disabled={Boolean(exporting)}
+            onClick={() => void exportCsv()}
+            type="button"
+          >
+            <Download />{exporting === "all" ? "กำลัง Export…" : "Export CSV ทั้งหมด"}
+          </button>
           <Link className="primary action-link" href="/upload"><Upload />อัปโหลดวิดีโอ</Link>
         </div>
       </header>
@@ -443,6 +486,13 @@ export function VideoLibraryClient({ role }: { role: Role }) {
             </select>
             <button disabled={working} onClick={applyBulkCategory} type="button">
               เปลี่ยนหมวดหมู่
+            </button>
+            <button
+              disabled={working || Boolean(exporting)}
+              onClick={() => void exportCsv([...selected])}
+              type="button"
+            >
+              <Download />{exporting === "selected" ? "กำลัง Export…" : "Export CSV ที่เลือก"}
             </button>
             <button className="danger-button" disabled={working} onClick={bulkDelete} type="button">
               <Trash2 />ลบที่เลือก

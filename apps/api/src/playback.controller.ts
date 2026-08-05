@@ -124,41 +124,48 @@ export class PlaybackController {
     const parsed = authorizeSchema.safeParse(untrustedBody);
     if (!parsed.success) throw new ForbiddenException("คำขอรับชมไม่ถูกต้อง");
     const host = refererHost(referer);
-    const video = await this.prisma.video.findFirst({
-      where: {
-        publicId: parsed.data.videoPublicId,
-        status: { in: ["UPLOADED", "READY"] },
-        deletedAt: null,
-        files: {
-          some: {
-            id: parsed.data.fileId,
-            role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] }
+    const [systemConfig, video] = await Promise.all([
+      this.prisma.systemConfig.findUnique({
+        where: { id: 1 },
+        select: { allowAllDomains: true }
+      }),
+      this.prisma.video.findFirst({
+        where: {
+          publicId: parsed.data.videoPublicId,
+          status: { in: ["UPLOADED", "READY"] },
+          deletedAt: null,
+          files: {
+            some: {
+              id: parsed.data.fileId,
+              role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] }
+            }
+          }
+        },
+        select: {
+          id: true,
+          publicId: true,
+          posterKey: true,
+          files: {
+            where: {
+              id: parsed.data.fileId,
+              role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] }
+            },
+            select: { id: true, storageKey: true, role: true, mimeType: true },
+            take: 1
+          },
+          allowedDomains: {
+            where: { allowedDomain: { active: true } },
+            select: { allowedDomain: { select: { id: true, hostname: true, includeSubdomains: true } } }
           }
         }
-      },
-      select: {
-        id: true,
-        publicId: true,
-        posterKey: true,
-        files: {
-          where: {
-            id: parsed.data.fileId,
-            role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] }
-          },
-          select: { id: true, storageKey: true, role: true, mimeType: true },
-          take: 1
-        },
-        allowedDomains: {
-          where: { allowedDomain: { active: true } },
-          select: { allowedDomain: { select: { id: true, hostname: true, includeSubdomains: true } } }
-        }
-      }
-    });
+      })
+    ]);
+    const allowAllDomains = systemConfig?.allowAllDomains ?? false;
     const match = video?.allowedDomains.find(item =>
       domainMatches(host, item.allowedDomain.hostname, item.allowedDomain.includeSubdomains)
     );
     const file = video ? preferredFile(video.files) : undefined;
-    if (!video || !match || !file) {
+    if (!video || (!allowAllDomains && !match) || !file) {
       throw new ForbiddenException("โดเมนนี้ไม่ได้รับอนุญาตให้เล่นวิดีโอ");
     }
 
@@ -177,7 +184,7 @@ export class PlaybackController {
       data: {
         id: sessionId,
         videoId: video.id,
-        allowedDomainId: match.allowedDomain.id,
+        allowedDomainId: match?.allowedDomain.id ?? null,
         expiresAt: new Date(expires * 1000)
       }
     });
@@ -196,28 +203,34 @@ export class PlaybackController {
     if (!parsed.success) {
       throw new ForbiddenException("คำขอต่ออายุสิทธิ์รับชมไม่ถูกต้อง");
     }
-    const session = await this.prisma.playbackSession.findUnique({
-      where: { id: parsed.data.playbackSessionId },
-      select: {
-        id: true,
-        expiresAt: true,
-        createdAt: true,
-        allowedDomain: { select: { active: true } },
-        video: {
-          select: {
-            publicId: true,
-            posterKey: true,
-            status: true,
-            deletedAt: true,
-            files: {
-              where: { role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] } },
-              orderBy: { createdAt: "desc" },
-              select: { id: true, storageKey: true, role: true, mimeType: true }
+    const [systemConfig, session] = await Promise.all([
+      this.prisma.systemConfig.findUnique({
+        where: { id: 1 },
+        select: { allowAllDomains: true }
+      }),
+      this.prisma.playbackSession.findUnique({
+        where: { id: parsed.data.playbackSessionId },
+        select: {
+          id: true,
+          expiresAt: true,
+          createdAt: true,
+          allowedDomain: { select: { active: true } },
+          video: {
+            select: {
+              publicId: true,
+              posterKey: true,
+              status: true,
+              deletedAt: true,
+              files: {
+                where: { role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] } },
+                orderBy: { createdAt: "desc" },
+                select: { id: true, storageKey: true, role: true, mimeType: true }
+              }
             }
           }
         }
-      }
-    });
+      })
+    ]);
     const previousExpires = session
       ? Math.floor(session.expiresAt.getTime() / 1000)
       : 0;
@@ -233,7 +246,7 @@ export class PlaybackController {
       !session ||
       !safeHexEqual(parsed.data.eventToken, expected) ||
       Date.now() - session.createdAt.getTime() > maximumSessionAgeMs ||
-      !session.allowedDomain.active ||
+      (!(systemConfig?.allowAllDomains ?? false) && !session.allowedDomain?.active) ||
       !["UPLOADED", "READY"].includes(session.video.status) ||
       session.video.deletedAt ||
       !file
