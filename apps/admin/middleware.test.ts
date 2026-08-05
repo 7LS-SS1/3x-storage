@@ -60,15 +60,13 @@ describe("authentication middleware", () => {
     expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
   });
 
-  it("allows an embed page to be framed only by its referring HTTPS origin", () => {
+  it("allows an embed page to be framed while the playback API enforces access", () => {
     const request = new NextRequest("https://player.example.test/embed/video-public-id", {
       headers: { referer: "https://sports.example.test/watch/123" }
     });
     const response = middleware(request);
     expect(response.status).toBe(200);
-    expect(response.headers.get("content-security-policy")).toContain(
-      "frame-ancestors https://sports.example.test"
-    );
+    expect(response.headers.get("content-security-policy")).toContain("frame-ancestors *");
     expect(response.headers.get("x-frame-options")).toBeNull();
     expect(response.headers.get("cross-origin-resource-policy")).toBe("cross-origin");
   });
@@ -87,13 +85,11 @@ describe("authentication middleware", () => {
     }
   });
 
-  it("keeps direct embed navigation non-frameable when no parent referrer exists", () => {
+  it("keeps direct embed navigation frameable for allow-all playback", () => {
     const response = middleware(
       new NextRequest("https://player.example.test/embed/video-public-id")
     );
-    expect(response.headers.get("content-security-policy")).toContain(
-      "frame-ancestors 'none'"
-    );
+    expect(response.headers.get("content-security-policy")).toContain("frame-ancestors *");
   });
 
   it("allows only the Google Picker origins required by Drive import", () => {

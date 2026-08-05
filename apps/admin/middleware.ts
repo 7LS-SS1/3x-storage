@@ -36,17 +36,6 @@ function webOrigin(value: string | undefined) {
   }
 }
 
-function embedAncestor(request: NextRequest) {
-  const referer = request.headers.get("referer");
-  if (!referer) return "'none'";
-  const url = webOrigin(referer);
-  if (!url) return "'none'";
-  if (process.env.NODE_ENV === "production" && url.protocol !== "https:") {
-    return "'none'";
-  }
-  return url.origin;
-}
-
 export function resolveStorageOrigin(
   environment: StorageEnvironment = process.env as StorageEnvironment
 ) {
@@ -111,7 +100,7 @@ export function middleware(request: NextRequest) {
     "default-src 'self'",
     "base-uri 'self'",
     "form-action 'self'",
-    `frame-ancestors ${isEmbed ? embedAncestor(request) : "'none'"}`,
+    `frame-ancestors ${isEmbed ? "*" : "'none'"}`,
     "object-src 'none'",
     `img-src 'self' data: blob:${storageSource}${mediaSource} https://*.googleusercontent.com https://*.gstatic.com`,
     `media-src 'self' blob:${storageSource}${mediaSource}`,
