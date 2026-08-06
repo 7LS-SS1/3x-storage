@@ -131,9 +131,16 @@ function posterFileId(files: Array<{ id: string; role: string }>) {
     ?? null;
 }
 
-function serializeVideo(video: VideoListItem, posterUrl: string | null = null) {
+function serializeVideo(video: VideoListItem) {
   const player = playerBaseUrl();
   const fileId = posterFileId(video.files) ?? video.id;
+  const posterUrl = video.posterKey
+    ? createPosterDeliveryUrl({
+        videoPublicId: video.publicId,
+        fileId,
+        storageKey: video.posterKey
+      })
+    : null;
   return {
     id: video.id,
     publicId: video.publicId,
@@ -151,13 +158,7 @@ function serializeVideo(video: VideoListItem, posterUrl: string | null = null) {
     processingError: video.processingError,
     posterAvailable: Boolean(video.posterKey),
     posterUrl,
-    thumbnailUrl: video.posterKey && fileId
-      ? createPosterDeliveryUrl({
-          videoPublicId: video.publicId,
-          fileId,
-          storageKey: video.posterKey
-        })
-      : null,
+    thumbnailUrl: posterUrl,
     previewAvailable: video.files.some(file =>
       ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"].includes(file.role)
     ),
@@ -312,14 +313,7 @@ export class VideosController {
         }
       })
     ]);
-    const data = await Promise.all(videos.map(async video =>
-      serializeVideo(
-        video,
-        video.posterKey
-          ? await this.storage.createReadUrl(video.posterKey, 600)
-          : null
-      )
-    ));
+    const data = videos.map(video => serializeVideo(video));
     return {
       data,
       pagination: {
@@ -407,12 +401,7 @@ export class VideosController {
     });
     if (!video) throw new NotFoundException("ไม่พบวิดีโอ");
     return {
-      video: serializeVideo(
-        video,
-        video.posterKey
-          ? await this.storage.createReadUrl(video.posterKey, 600)
-          : null
-      )
+      video: serializeVideo(video)
     };
   }
 
@@ -588,6 +577,7 @@ export class VideosController {
       },
       select: {
         id: true,
+        publicId: true,
         title: true,
         posterKey: true,
         files: {
@@ -611,7 +601,11 @@ export class VideosController {
         mimeType: file.mimeType,
         url: await this.storage.createReadUrl(file.storageKey, expiresIn),
         posterUrl: video.posterKey
-          ? await this.storage.createReadUrl(video.posterKey, expiresIn)
+          ? createPosterDeliveryUrl({
+              videoPublicId: video.publicId,
+              fileId: file.id,
+              storageKey: video.posterKey
+            })
           : null,
         expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString()
       }

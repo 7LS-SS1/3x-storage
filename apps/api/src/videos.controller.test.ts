@@ -138,19 +138,17 @@ describe("VideosController poster URLs", () => {
       },
       $transaction: vi.fn((operations: Promise<unknown>[]) => Promise.all(operations))
     } as unknown as PrismaService;
-    const createReadUrl = vi.fn().mockResolvedValue("https://storage.example.test/signed-cover");
-    const storage = { createReadUrl } as unknown as StorageService;
-    const controller = new VideosController(prisma, storage);
+    const controller = new VideosController(prisma, {} as StorageService);
 
     const result = await controller.list({});
 
-    expect(createReadUrl).toHaveBeenCalledOnce();
-    expect(createReadUrl).toHaveBeenCalledWith("images/video-with-cover/poster.webp", 600);
     expect(result.data).toEqual([
       expect.objectContaining({
         id: "video-with-cover",
         posterAvailable: true,
-        posterUrl: "https://storage.example.test/signed-cover",
+        posterUrl: expect.stringMatching(
+          /^https:\/\/media\.example\.test\/images\/video-with-cover\/poster\.webp\?/
+        ),
         thumbnailUrl: expect.stringMatching(
           /^https:\/\/media\.example\.test\/images\/video-with-cover\/poster\.webp\?/
         )
@@ -162,6 +160,46 @@ describe("VideosController poster URLs", () => {
         thumbnailUrl: null
       })
     ]);
+    expect(result.data[0]!.posterUrl).toBe(result.data[0]!.thumbnailUrl);
+    const posterUrl = new URL(result.data[0]!.posterUrl!);
+    expect(posterUrl.searchParams.has("sessionId")).toBe(false);
+    expect(posterUrl.searchParams.has("expires")).toBe(false);
+  });
+
+  it("keeps the admin preview cover permanent while only the video preview expires", async () => {
+    const createReadUrl = vi.fn().mockResolvedValue(
+      "https://storage.example.test/videos/video-one.mp4?expires=300"
+    );
+    const prisma = {
+      video: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "video-record-one",
+          publicId: "public-video-one",
+          title: "วิดีโอหนึ่ง",
+          posterKey: "images/video-one/poster.webp",
+          files: [{
+            id: "file-video-one",
+            role: "PLAYBACK",
+            storageKey: "videos/video-one.mp4",
+            mimeType: "video/mp4"
+          }]
+        })
+      }
+    } as unknown as PrismaService;
+    const storage = { createReadUrl } as unknown as StorageService;
+    const controller = new VideosController(prisma, storage);
+
+    const result = await controller.preview("video-record-one");
+
+    expect(createReadUrl).toHaveBeenCalledTimes(1);
+    expect(createReadUrl).toHaveBeenCalledWith("videos/video-one.mp4", 300);
+    expect(result.preview.url).toBe(
+      "https://storage.example.test/videos/video-one.mp4?expires=300"
+    );
+    const posterUrl = new URL(result.preview.posterUrl!);
+    expect(posterUrl.searchParams.get("purpose")).toBe("poster");
+    expect(posterUrl.searchParams.has("sessionId")).toBe(false);
+    expect(posterUrl.searchParams.has("expires")).toBe(false);
   });
 });
 
@@ -216,8 +254,11 @@ describe("VideosController export", () => {
           }
         ]
       });
-      expect(new URL(result.videos[0]!.thumbnailUrl).searchParams.get("fileId"))
-        .toBe("video-record-one");
+      const exportedPosterUrl = new URL(result.videos[0]!.thumbnailUrl);
+      expect(exportedPosterUrl.searchParams.get("purpose")).toBe("poster");
+      expect(exportedPosterUrl.searchParams.has("expires")).toBe(false);
+      expect(exportedPosterUrl.searchParams.has("sessionId")).toBe(false);
+      expect(exportedPosterUrl.searchParams.get("fileId")).toBe("video-record-one");
       expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: { deletedAt: null, id: { in: ["video-one", "video-two"] } },
         select: {

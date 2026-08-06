@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { domainMatches, normalizeDomain, permissions, signMedia, verifyMedia } from "./index";
+import { domainMatches, normalizeDomain, permissions, signMedia, signPoster, verifyMedia } from "./index";
 
 describe("security primitives", () => {
   it("normalizes domains safely", () => expect(normalizeDomain(" Example.COM. ")).toBe("example.com"));
@@ -18,5 +18,15 @@ describe("security primitives", () => {
   });
   it("rejects delimiter injection into signed claims", () => {
     expect(() => signMedia({ path: "a\nb", expires: 123, sessionId: "s", videoId: "v", fileId: "f" }, "s".repeat(32))).toThrow();
+  });
+  it("domain-separates permanent poster signatures from expiring media signatures", () => {
+    const secret = "s".repeat(32);
+    const poster = signPoster({ path: "images/v/poster.webp", videoId: "video-test", fileId: "file-test" }, secret);
+    const media = signMedia({ path: "images/v/poster.webp", expires: 123, sessionId: "poster_v1", videoId: "video-test", fileId: "file-test" }, secret);
+    expect(poster).toMatch(/^[a-f0-9]{64}$/);
+    expect(poster).not.toBe(media);
+  });
+  it("rejects delimiter injection into permanent poster claims", () => {
+    expect(() => signPoster({ path: "images/a\nb.webp", videoId: "video-test", fileId: "file-test" }, "s".repeat(32))).toThrow();
   });
 });

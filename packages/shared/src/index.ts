@@ -32,6 +32,13 @@ export function signMedia(input: { path: string; expires: number; sessionId: str
   return createHmac("sha256", secret).update([input.path, input.expires, input.sessionId, input.videoId, input.fileId].join("\n")).digest("hex");
 }
 
+export function signPoster(input: { path: string; videoId: string; fileId: string }, secret: string) {
+  if (secret.length < 32 || Object.values(input).some(value => value.includes("\n"))) throw new Error("INVALID_SIGNING_INPUT");
+  return createHmac("sha256", secret)
+    .update(["poster_v1", input.path, input.videoId, input.fileId].join("\n"))
+    .digest("hex");
+}
+
 export function verifyMedia(signature: string, expected: string): boolean {
   if (!/^[a-f0-9]{64}$/i.test(signature) || !/^[a-f0-9]{64}$/i.test(expected)) return false;
   return timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expected, "hex"));
