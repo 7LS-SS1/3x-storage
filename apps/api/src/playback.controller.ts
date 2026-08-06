@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Throttle } from "@nestjs/throttler";
 import { domainMatches, normalizeDomain, signMedia } from "@video/shared";
 import { PrismaService } from "./prisma.service";
+import { createPosterDeliveryUrl } from "./poster-delivery-url";
 
 const authorizeSchema = z.object({
   videoPublicId: z.string().min(10).max(128),
@@ -194,7 +195,13 @@ export class PlaybackController {
       sessionId,
       expires
     });
-    const posterUrl = video.posterKey ? playbackGrant({ videoPublicId: video.publicId, fileId: file.id, storageKey: video.posterKey, sessionId, expires }).mediaUrl : null;
+    const posterUrl = video.posterKey
+      ? createPosterDeliveryUrl({
+          videoPublicId: video.publicId,
+          fileId: file.id,
+          storageKey: video.posterKey
+        })
+      : null;
 
     await this.prisma.playbackSession.create({
       data: {
@@ -259,19 +266,16 @@ export class PlaybackController {
       throw new ForbiddenException("ไม่พบรูปหน้าปก หรือโดเมนนี้ไม่ได้รับอนุญาต");
     }
 
-    const expires = Math.floor(Date.now() / 1000) + playbackTtlSeconds();
-    const grant = playbackGrant({
+    const posterUrl = createPosterDeliveryUrl({
       videoPublicId: video.publicId,
       fileId: file.id,
-      storageKey: video.posterKey,
-      sessionId: randomUUID(),
-      expires
+      storageKey: video.posterKey
     });
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     response.setHeader("Referrer-Policy", "no-referrer");
     response.setHeader("X-Content-Type-Options", "nosniff");
-    response.redirect(302, grant.mediaUrl);
+    response.redirect(302, posterUrl);
   }
 
   @Post("refresh")
@@ -343,7 +347,13 @@ export class PlaybackController {
       sessionId: session.id,
       expires
     });
-    const posterUrl = session.video.posterKey ? playbackGrant({ videoPublicId: session.video.publicId, fileId: file.id, storageKey: session.video.posterKey, sessionId: session.id, expires }).mediaUrl : null;
+    const posterUrl = session.video.posterKey
+      ? createPosterDeliveryUrl({
+          videoPublicId: session.video.publicId,
+          fileId: file.id,
+          storageKey: session.video.posterKey
+        })
+      : null;
     await this.prisma.playbackSession.update({
       where: { id: session.id },
       data: { expiresAt: new Date(expires * 1000) }

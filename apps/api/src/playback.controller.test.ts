@@ -33,6 +33,7 @@ describe("PlaybackController authorization refresh", () => {
         findFirst: vi.fn().mockResolvedValue({
           id: "video-database-id",
           publicId: "video-public-test",
+          posterKey: "images/video-database-id/poster.webp",
           files: [{
             id: "file-original-test",
             storageKey: "videos/original/video-test.mp4",
@@ -64,6 +65,10 @@ describe("PlaybackController authorization refresh", () => {
     expect(result.mediaUrl).toContain(
       "https://media.example.test/videos/original/video-test.mp4"
     );
+    const posterUrl = new URL(result.posterUrl!);
+    expect(posterUrl.searchParams.get("purpose")).toBe("poster");
+    expect(posterUrl.searchParams.has("sessionId")).toBe(false);
+    expect(posterUrl.searchParams.has("expires")).toBe(false);
     expect(create).toHaveBeenCalledWith({
       data: {
         id: expect.any(String),
@@ -89,6 +94,7 @@ describe("PlaybackController authorization refresh", () => {
           allowedDomain: { active: true },
           video: {
             publicId: videoPublicId,
+            posterKey: "images/video-database-id/poster.webp",
             status: "READY",
             deletedAt: null,
             files: [{
@@ -115,6 +121,10 @@ describe("PlaybackController authorization refresh", () => {
       eventToken(sessionId, videoPublicId, previousExpires)
     );
     expect(result.mediaUrl).toContain("https://media.example.test/");
+    const posterUrl = new URL(result.posterUrl!);
+    expect(posterUrl.searchParams.get("purpose")).toBe("poster");
+    expect(posterUrl.searchParams.has("sessionId")).toBe(false);
+    expect(posterUrl.searchParams.has("expires")).toBe(false);
     expect(update).toHaveBeenCalledWith({
       where: { id: sessionId },
       data: { expiresAt: expect.any(Date) }
@@ -382,7 +392,7 @@ describe("PlaybackController authorization refresh", () => {
     }
   });
 
-  it("redirects a stable thumbnail URL to a fresh signed cover while allow-all is enabled", async () => {
+  it("redirects a stable thumbnail URL to a stateless permanent cover while allow-all is enabled", async () => {
     const prisma = {
       systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: true }) },
       video: {
@@ -413,6 +423,10 @@ describe("PlaybackController authorization refresh", () => {
       expect.stringContaining("images/video-public-test/poster.webp")
     );
     expect(redirect.mock.calls[0]?.[1]).toContain("signature=");
+    const posterUrl = new URL(String(redirect.mock.calls[0]?.[1]));
+    expect(posterUrl.searchParams.get("purpose")).toBe("poster");
+    expect(posterUrl.searchParams.has("sessionId")).toBe(false);
+    expect(posterUrl.searchParams.has("expires")).toBe(false);
     expect(setHeader).toHaveBeenCalledWith("Cache-Control", "no-store");
     expect(setHeader).toHaveBeenCalledWith(
       "Cross-Origin-Resource-Policy",
