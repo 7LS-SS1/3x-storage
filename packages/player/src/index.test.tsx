@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { isHlsPlayback, SecureVideoPlayer } from "./index";
+import { isHlsPlayback, selectHlsPlaybackMode, SecureVideoPlayer } from "./index";
 
 describe("HLS source detection", () => {
   it("accepts standard and alternative HLS MIME types", () => {
@@ -13,6 +13,20 @@ describe("HLS source detection", () => {
       "https://media.example/videos/video-123/hls/index.m3u8?signature=redacted",
       "application/octet-stream"
     )).toBe(true);
+  });
+});
+
+describe("HLS playback mode", () => {
+  it("prefers HLS.js when Chromium reports uncertain native HLS support", () => {
+    expect(selectHlsPlaybackMode(true, "maybe")).toBe("hls.js");
+  });
+
+  it("uses native HLS only when HLS.js is unavailable", () => {
+    expect(selectHlsPlaybackMode(false, "probably")).toBe("native");
+  });
+
+  it("reports unsupported only when neither playback mode is available", () => {
+    expect(selectHlsPlaybackMode(false, "")).toBe("unsupported");
   });
 });
 
