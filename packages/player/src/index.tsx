@@ -25,6 +25,17 @@ export function isHlsPlayback(source: string, sourceType?: string) {
   }
 }
 
+export type HlsPlaybackMode = "hls.js" | "native" | "unsupported";
+
+export function selectHlsPlaybackMode(
+  hlsJsSupported: boolean,
+  nativeSupport: CanPlayTypeResult
+): HlsPlaybackMode {
+  if (hlsJsSupported) return "hls.js";
+  if (nativeSupport) return "native";
+  return "unsupported";
+}
+
 function nativeMediaErrorMessage(error: MediaError | null) {
   switch (error?.code) {
     case 2:
@@ -47,8 +58,12 @@ export function SecureVideoPlayer({source,sourceType,poster,title,onEvent,onRefr
   useEffect(()=>{
     const video=ref.current;
     if(!video||!isHlsPlayback(src,sourceType))return;
-    if(video.canPlayType("application/vnd.apple.mpegurl")){video.src=src;return;}
-    if(!Hls.isSupported()){
+    const playbackMode=selectHlsPlaybackMode(
+      Hls.isSupported(),
+      video.canPlayType("application/vnd.apple.mpegurl")
+    );
+    if(playbackMode==="native"){video.src=src;return;}
+    if(playbackMode==="unsupported"){
       setError({message:"เบราว์เซอร์นี้ไม่รองรับการเล่น HLS",retryLabel:"ลองเล่นใหม่"});
       emit("error");
       return;
