@@ -69,6 +69,9 @@ describe("authentication middleware", () => {
     expect(response.headers.get("content-security-policy")).toContain("frame-ancestors *");
     expect(response.headers.get("x-frame-options")).toBeNull();
     expect(response.headers.get("cross-origin-resource-policy")).toBe("cross-origin");
+    expect(response.headers.get("content-security-policy")).toContain(
+      "worker-src 'self' blob:"
+    );
   });
 
   it("allows signed media URLs to render as video posters", () => {

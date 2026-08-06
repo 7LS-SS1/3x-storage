@@ -1,6 +1,20 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { SecureVideoPlayer } from "./index";
+import { isHlsPlayback, SecureVideoPlayer } from "./index";
+
+describe("HLS source detection", () => {
+  it("accepts standard and alternative HLS MIME types", () => {
+    expect(isHlsPlayback("https://media.example/video", "application/vnd.apple.mpegurl")).toBe(true);
+    expect(isHlsPlayback("https://media.example/video", "application/x-mpegURL")).toBe(true);
+  });
+
+  it("recognizes a signed manifest URL even when storage reports a generic MIME type", () => {
+    expect(isHlsPlayback(
+      "https://media.example/videos/video-123/hls/index.m3u8?signature=redacted",
+      "application/octet-stream"
+    )).toBe(true);
+  });
+});
 
 describe("SecureVideoPlayer poster", () => {
   it("renders the cover as a play overlay before playback starts", () => {

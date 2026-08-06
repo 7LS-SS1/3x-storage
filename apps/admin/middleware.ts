@@ -106,6 +106,7 @@ export function middleware(request: NextRequest) {
     `media-src 'self' blob:${storageSource}${mediaSource}`,
     `connect-src 'self'${storageSource}${mediaSource} https://www.googleapis.com https://content.googleapis.com https://picker.googleapis.com`,
     "frame-src 'self' https://docs.google.com https://drive.google.com https://accounts.google.com https://picker.googleapis.com",
+    "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
     `script-src 'self' https://apis.google.com 'nonce-${nonce}' 'strict-dynamic'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
     "font-src 'self'",
