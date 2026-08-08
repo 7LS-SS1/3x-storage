@@ -237,7 +237,7 @@ export class UploadsController {
       maxFileBytes: String(
         configuredInteger(
           "UPLOAD_MAX_FILE_BYTES",
-          10 * 1024 ** 3,
+          20 * 1024 ** 3,
           5 * 1024 ** 2,
           Number.MAX_SAFE_INTEGER
         )
@@ -290,7 +290,7 @@ export class UploadsController {
 
     const maxFileBytes = configuredInteger(
       "UPLOAD_MAX_FILE_BYTES",
-      10 * 1024 ** 3,
+      20 * 1024 ** 3,
       5 * 1024 ** 2,
       Number.MAX_SAFE_INTEGER
     );
