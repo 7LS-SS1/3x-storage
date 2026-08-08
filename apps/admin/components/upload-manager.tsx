@@ -200,7 +200,7 @@ export function UploadManager() {
     allowedExtensions,
     uploadsEnabled: true,
     defaultCategoryId: null,
-    maxFileBytes: String(10 * 1024 ** 3),
+    maxFileBytes: String(20 * 1024 ** 3),
     maxConcurrentFiles: 1,
     maxConcurrentParts: 2,
     partSizeBytes: 16 * 1024 ** 2

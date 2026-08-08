@@ -110,11 +110,11 @@ function titleFromFilename(filename: string) {
 }
 
 function maxFileBytes() {
-  const configured = process.env.UPLOAD_MAX_FILE_BYTES || String(10 * 1024 ** 3);
+  const configured = process.env.UPLOAD_MAX_FILE_BYTES || String(20 * 1024 ** 3);
   try {
     return BigInt(configured);
   } catch {
-    return BigInt(10 * 1024 ** 3);
+    return BigInt(20 * 1024 ** 3);
   }
 }
 
