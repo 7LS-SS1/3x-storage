@@ -2,15 +2,15 @@ import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } fro
 import { Prisma, PrismaClient } from "@prisma/client";
 import { Worker } from "bullmq";
 import type IORedis from "ioredis";
-import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, extname, join } from "node:path";
+import { extname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
 import { mediaPosterStorageKey, mediaPosterTime, mediaScaleFilter } from "./media-processing-config.js";
+import { run } from "./subprocess.js";
 
 const prisma = new PrismaClient();
 
@@ -36,19 +36,6 @@ function storage() {
     }
   });
   return { client, bucket };
-}
-
-function run(command: string, args: string[], capture = false) {
-  return new Promise<string>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit" });
-    let output = "";
-    if (capture) {
-      child.stdout?.on("data", chunk => output += chunk);
-      child.stderr?.on("data", chunk => output += chunk);
-    }
-    child.once("error", reject);
-    child.once("exit", code => code === 0 ? resolve(output) : reject(new Error(`${command} exited ${code}: ${output.slice(-1000)}`)));
-  });
 }
 
 export function createMediaProcessingWorker(connection: IORedis) {
