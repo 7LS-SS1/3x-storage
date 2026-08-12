@@ -1,0 +1,35 @@
+{
+  "region": "ap-southeast-1",
+  "apps": {
+    "admin": {
+      "name": "3x-storage",
+      "root": "apps/admin",
+      "framework": "nextjs",
+      "httpPort": 3000,
+      "build": {
+        "command": "pnpm run build"
+      }
+    },
+    "api": {
+      "name": "api",
+      "root": "apps/api",
+      "framework": "nestjs",
+      "httpPort": 3000,
+      "build": {
+        "command": "pnpm run build",
+        "outputDirectory": "dist"
+      }
+    },
+    "worker": {
+      "name": "worker",
+      "root": "apps/worker",
+      "framework": "bun",
+      "entry": "src/index.ts",
+      "httpPort": 3000,
+      "build": {
+        "command": "pnpm run build",
+        "outputDirectory": "."
+      }
+    }
+  }
+}
