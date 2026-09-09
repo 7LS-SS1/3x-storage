@@ -27,6 +27,45 @@ export function isHlsPlayback(source: string, sourceType?: string) {
 
 export type HlsPlaybackMode = "hls.js" | "native" | "unsupported";
 
+type WebKitFullscreenVideo = HTMLVideoElement & {
+  webkitEnterFullscreen?: () => void;
+  webkitRequestFullscreen?: () => void;
+  webkitSupportsFullscreen?: boolean;
+};
+
+export function requestPlayerFullscreen(
+  container: HTMLElement,
+  video: HTMLVideoElement,
+  fullscreenEnabled = typeof document === "undefined" ? false : document.fullscreenEnabled
+) {
+  const webkitVideo = video as WebKitFullscreenVideo;
+
+  // iPhone Safari does not support element fullscreen consistently, but it
+  // exposes a native fullscreen player directly on the video element.
+  if (
+    fullscreenEnabled !== true &&
+    webkitVideo.webkitSupportsFullscreen !== false &&
+    webkitVideo.webkitEnterFullscreen
+  ) {
+    webkitVideo.webkitEnterFullscreen();
+    return;
+  }
+
+  if (container.requestFullscreen) {
+    void container.requestFullscreen().catch(() => {
+      webkitVideo.webkitEnterFullscreen?.();
+    });
+    return;
+  }
+
+  if (webkitVideo.webkitEnterFullscreen) {
+    webkitVideo.webkitEnterFullscreen();
+    return;
+  }
+
+  webkitVideo.webkitRequestFullscreen?.();
+}
+
 export function selectHlsPlaybackMode(
   hlsJsSupported: boolean,
   nativeSupport: CanPlayTypeResult
@@ -175,7 +214,7 @@ export function SecureVideoPlayer({source,sourceType,poster,title,onEvent,onRefr
         <i>{fmt(time)} / {fmt(duration)}</i>
       </span><span>
         <button aria-label={muted?"เปิดเสียง":"ปิดเสียง"} onClick={()=>{if(ref.current){ref.current.muted=!muted;setMuted(!muted)}}}>{muted?<VolumeX/>:<Volume2/>}</button>
-        <button aria-label="เต็มหน้าจอ" onClick={()=>wrap.current?.requestFullscreen()}><Maximize/></button>
+        <button type="button" aria-label="เต็มหน้าจอ" onClick={()=>{if(wrap.current&&ref.current)requestPlayerFullscreen(wrap.current,ref.current)}}><Maximize/></button>
       </span></div>
     </div>
   </div>;

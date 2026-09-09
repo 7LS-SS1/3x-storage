@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { isHlsPlayback, selectHlsPlaybackMode, SecureVideoPlayer } from "./index";
+import { describe, expect, it, vi } from "vitest";
+import { isHlsPlayback, requestPlayerFullscreen, selectHlsPlaybackMode, SecureVideoPlayer } from "./index";
 
 describe("HLS source detection", () => {
   it("accepts standard and alternative HLS MIME types", () => {
@@ -27,6 +27,45 @@ describe("HLS playback mode", () => {
 
   it("reports unsupported only when neither playback mode is available", () => {
     expect(selectHlsPlaybackMode(false, "")).toBe("unsupported");
+  });
+});
+
+describe("player fullscreen", () => {
+  it("uses the standard Fullscreen API when it is available", async () => {
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+
+    requestPlayerFullscreen(
+      { requestFullscreen } as unknown as HTMLElement,
+      {} as HTMLVideoElement,
+      true
+    );
+
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+  });
+
+  it("uses native iPhone video fullscreen when element fullscreen is unavailable", () => {
+    const webkitEnterFullscreen = vi.fn();
+
+    requestPlayerFullscreen(
+      {} as HTMLElement,
+      { webkitEnterFullscreen, webkitSupportsFullscreen: true } as unknown as HTMLVideoElement,
+      false
+    );
+
+    expect(webkitEnterFullscreen).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to native video fullscreen when a standard request is rejected", async () => {
+    const webkitEnterFullscreen = vi.fn();
+
+    requestPlayerFullscreen(
+      { requestFullscreen: vi.fn().mockRejectedValue(new Error("not allowed")) } as unknown as HTMLElement,
+      { webkitEnterFullscreen } as unknown as HTMLVideoElement,
+      true
+    );
+    await Promise.resolve();
+
+    expect(webkitEnterFullscreen).toHaveBeenCalledOnce();
   });
 });
 
