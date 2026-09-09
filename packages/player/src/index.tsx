@@ -1,7 +1,7 @@
 "use client";
 import Hls from "hls.js";
 import { useEffect, useRef, useState } from "react";
-import { Maximize, Pause, Play, RotateCcw, RotateCw, Volume2, VolumeX } from "lucide-react";
+import { Maximize, Minimize, Pause, Play, RotateCcw, RotateCw, Volume2, VolumeX } from "lucide-react";
 import "./player.css";
 
 export type PlayerEvent = "ready" | "play" | "playing" | "pause" | "ended" | "error" | "timeupdate";
@@ -28,9 +28,15 @@ export function isHlsPlayback(source: string, sourceType?: string) {
 export type HlsPlaybackMode = "hls.js" | "native" | "unsupported";
 
 type WebKitFullscreenVideo = HTMLVideoElement & {
+  webkitDisplayingFullscreen?: boolean;
   webkitEnterFullscreen?: () => void;
+  webkitExitFullscreen?: () => void;
   webkitRequestFullscreen?: () => void;
   webkitSupportsFullscreen?: boolean;
+};
+
+type PlayerFullscreenDocument = Pick<Document, "fullscreenElement" | "fullscreenEnabled"> & {
+  exitFullscreen?: () => Promise<void>;
 };
 
 export function requestPlayerFullscreen(
@@ -66,6 +72,26 @@ export function requestPlayerFullscreen(
   webkitVideo.webkitRequestFullscreen?.();
 }
 
+export function togglePlayerFullscreen(
+  container: HTMLElement,
+  video: HTMLVideoElement,
+  fullscreenDocument: PlayerFullscreenDocument = document
+) {
+  const webkitVideo = video as WebKitFullscreenVideo;
+
+  if (fullscreenDocument.fullscreenElement) {
+    void fullscreenDocument.exitFullscreen?.();
+    return;
+  }
+
+  if (webkitVideo.webkitDisplayingFullscreen && webkitVideo.webkitExitFullscreen) {
+    webkitVideo.webkitExitFullscreen();
+    return;
+  }
+
+  requestPlayerFullscreen(container, video, fullscreenDocument.fullscreenEnabled);
+}
+
 export function selectHlsPlaybackMode(
   hlsJsSupported: boolean,
   nativeSupport: CanPlayTypeResult
@@ -92,8 +118,22 @@ const fmt=(n:number)=>`${Math.floor(n/60).toString().padStart(2,"0")}:${Math.flo
 export function SecureVideoPlayer({source,sourceType,poster,title,onEvent,onRefreshAuthorization}:SecurePlayerProps){
   const ref=useRef<HTMLVideoElement>(null); const wrap=useRef<HTMLDivElement>(null);
   const hlsManaged=useRef(false);
-  const [src,setSrc]=useState(source); const [playing,setPlaying]=useState(false); const [started,setStarted]=useState(false); const [muted,setMuted]=useState(false); const [time,setTime]=useState(0); const [duration,setDuration]=useState(0); const [error,setError]=useState<PlaybackError|null>(null); const [retrying,setRetrying]=useState(false);
+  const [src,setSrc]=useState(source); const [playing,setPlaying]=useState(false); const [started,setStarted]=useState(false); const [muted,setMuted]=useState(false); const [fullscreen,setFullscreen]=useState(false); const [time,setTime]=useState(0); const [duration,setDuration]=useState(0); const [error,setError]=useState<PlaybackError|null>(null); const [retrying,setRetrying]=useState(false);
   useEffect(()=>{setSrc(source);setError(null)},[source]);
+  useEffect(()=>{
+    const video=ref.current;
+    const syncStandard=()=>setFullscreen(Boolean(document.fullscreenElement));
+    const enterWebKit=()=>setFullscreen(true);
+    const exitWebKit=()=>setFullscreen(false);
+    document.addEventListener("fullscreenchange",syncStandard);
+    video?.addEventListener("webkitbeginfullscreen",enterWebKit);
+    video?.addEventListener("webkitendfullscreen",exitWebKit);
+    return()=>{
+      document.removeEventListener("fullscreenchange",syncStandard);
+      video?.removeEventListener("webkitbeginfullscreen",enterWebKit);
+      video?.removeEventListener("webkitendfullscreen",exitWebKit);
+    };
+  },[]);
   useEffect(()=>{
     const video=ref.current;
     if(!video||!isHlsPlayback(src,sourceType))return;
@@ -214,7 +254,7 @@ export function SecureVideoPlayer({source,sourceType,poster,title,onEvent,onRefr
         <i>{fmt(time)} / {fmt(duration)}</i>
       </span><span>
         <button aria-label={muted?"เปิดเสียง":"ปิดเสียง"} onClick={()=>{if(ref.current){ref.current.muted=!muted;setMuted(!muted)}}}>{muted?<VolumeX/>:<Volume2/>}</button>
-        <button type="button" aria-label="เต็มหน้าจอ" onClick={()=>{if(wrap.current&&ref.current)requestPlayerFullscreen(wrap.current,ref.current)}}><Maximize/></button>
+        <button type="button" aria-label={fullscreen?"ออกจากโหมดเต็มหน้าจอ":"เต็มหน้าจอ"} onClick={()=>{if(wrap.current&&ref.current)togglePlayerFullscreen(wrap.current,ref.current)}}>{fullscreen?<Minimize/>:<Maximize/>}</button>
       </span></div>
     </div>
   </div>;

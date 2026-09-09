@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { isHlsPlayback, requestPlayerFullscreen, selectHlsPlaybackMode, SecureVideoPlayer } from "./index";
+import { isHlsPlayback, requestPlayerFullscreen, selectHlsPlaybackMode, SecureVideoPlayer, togglePlayerFullscreen } from "./index";
 
 describe("HLS source detection", () => {
   it("accepts standard and alternative HLS MIME types", () => {
@@ -66,6 +66,30 @@ describe("player fullscreen", () => {
     await Promise.resolve();
 
     expect(webkitEnterFullscreen).toHaveBeenCalledOnce();
+  });
+
+  it("exits standard fullscreen when the player is already fullscreen", () => {
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined);
+
+    togglePlayerFullscreen(
+      {} as HTMLElement,
+      {} as HTMLVideoElement,
+      { fullscreenElement: {} as Element, fullscreenEnabled: true, exitFullscreen }
+    );
+
+    expect(exitFullscreen).toHaveBeenCalledOnce();
+  });
+
+  it("exits the native iPhone fullscreen player", () => {
+    const webkitExitFullscreen = vi.fn();
+
+    togglePlayerFullscreen(
+      {} as HTMLElement,
+      { webkitDisplayingFullscreen: true, webkitExitFullscreen } as unknown as HTMLVideoElement,
+      { fullscreenElement: null, fullscreenEnabled: false }
+    );
+
+    expect(webkitExitFullscreen).toHaveBeenCalledOnce();
   });
 });
 
