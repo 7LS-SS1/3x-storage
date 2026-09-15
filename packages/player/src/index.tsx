@@ -114,12 +114,34 @@ function nativeMediaErrorMessage(error: MediaError | null) {
   }
 }
 
+// Register before replacing a signed URL, while the old playback state still exists.
+export function preservePlaybackOnSourceChange(video: HTMLVideoElement) {
+  const position = video.currentTime;
+  const resume = !video.paused && !video.ended;
+  const restore = () => {
+    if (Number.isFinite(position) && position > 0) video.currentTime = position;
+    if (resume) void video.play().catch(() => { /* Browser may require a user gesture. */ });
+  };
+  video.addEventListener("loadedmetadata", restore, { once: true });
+  return () => video.removeEventListener("loadedmetadata", restore);
+}
+
 const fmt=(n:number)=>`${Math.floor(n/60).toString().padStart(2,"0")}:${Math.floor(n%60).toString().padStart(2,"0")}`;
 export function SecureVideoPlayer({source,sourceType,poster,title,onEvent,onRefreshAuthorization}:SecurePlayerProps){
   const ref=useRef<HTMLVideoElement>(null); const wrap=useRef<HTMLDivElement>(null);
   const hlsManaged=useRef(false);
   const [src,setSrc]=useState(source); const [playing,setPlaying]=useState(false); const [started,setStarted]=useState(false); const [muted,setMuted]=useState(false); const [fullscreen,setFullscreen]=useState(false); const [time,setTime]=useState(0); const [duration,setDuration]=useState(0); const [error,setError]=useState<PlaybackError|null>(null); const [retrying,setRetrying]=useState(false);
-  useEffect(()=>{setSrc(source);setError(null)},[source]);
+  const sourceRef=useRef(source);
+  const restoreCleanup=useRef<(() => void) | null>(null);
+  const replaceSource=(next:string)=>{
+    if(next===sourceRef.current)return;
+    restoreCleanup.current?.();
+    if(ref.current)restoreCleanup.current=preservePlaybackOnSourceChange(ref.current);
+    sourceRef.current=next;
+    setSrc(next);
+  };
+  useEffect(()=>{replaceSource(source);setError(null)},[source]);
+  useEffect(()=>()=>restoreCleanup.current?.(),[]);
   useEffect(()=>{
     const video=ref.current;
     const syncStandard=()=>setFullscreen(Boolean(document.fullscreenElement));
@@ -198,7 +220,7 @@ export function SecureVideoPlayer({source,sourceType,poster,title,onEvent,onRefr
           void onRefreshAuthorization().then(nextSource=>{
             if(disposed)return;
             setError(null);
-            setSrc(nextSource);
+            replaceSource(nextSource);
           }).catch(()=>fail("โหลดสตรีมไม่สำเร็จและไม่สามารถต่ออายุสิทธิ์รับชมได้"));
           return;
         }
@@ -229,7 +251,7 @@ export function SecureVideoPlayer({source,sourceType,poster,title,onEvent,onRefr
     if(!onRefreshAuthorization||retrying)return;
     setRetrying(true);
     try{
-      setSrc(await onRefreshAuthorization());
+      replaceSource(await onRefreshAuthorization());
       setError(null);
     }catch{
       setError({message:"ไม่สามารถต่ออายุสิทธิ์รับชมได้ กรุณาลองใหม่อีกครั้ง",retryLabel:"ลองอีกครั้ง"});

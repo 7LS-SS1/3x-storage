@@ -41,7 +41,10 @@ export function EmbedPlayer({
           eventToken: grant.current.eventToken
         })
       });
-      if (!response.ok) throw new Error("ไม่สามารถต่ออายุสิทธิ์รับชมได้");
+      if (!response.ok) {
+        console.error("[playback-refresh]", { status: response.status, path: "/backend/playback/refresh" });
+        throw new Error(`ไม่สามารถต่ออายุสิทธิ์รับชมได้ (HTTP ${response.status})`);
+      }
       const next = await response.json() as PlaybackGrant;
       grant.current = next;
       setSource(next.mediaUrl);

@@ -28,3 +28,12 @@ The connection did not succeed; the database update was not applied. The configu
 
 ## Deployment
 Deploy the commit and run Prisma migrate deploy in the deployment database network. The repository Dockerfile includes a migrate target; verify that the deployment executes it successfully. Pushing Git alone does not confirm migration execution.
+
+## Follow-up: playback stops around 330 seconds
+The user screenshot confirms `allowAllDomains: true` was saved on the server. Domain registration alone does not explain the remaining playback failure.
+
+Confirmed source-level defect: refreshing authorization replaces the media URL, but the player previously did not restore currentTime or resume playback after reloading the source. The fix captures position and paused state before replacement and restores them on loadedmetadata for HLS and direct media. Pending listeners are removed on replacement/unmount.
+
+Refresh failures now log `[playback-refresh]` with the HTTP status and endpoint path, without tokens or signed media URLs. The exact production failure is still unconfirmed pending the affected embed URL and browser network evidence. About 330 seconds is a reported symptom, not a confirmed fixed timeout.
+
+Validation: player tests 14/14 passed, including position restoration at 330 seconds, preserving pause, and listener cleanup. Player TypeScript passed. Full browser playback beyond expiry and production deployment remain unverified.

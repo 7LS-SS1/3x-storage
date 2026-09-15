@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { isHlsPlayback, requestPlayerFullscreen, selectHlsPlaybackMode, SecureVideoPlayer, togglePlayerFullscreen } from "./index";
+import { preservePlaybackOnSourceChange, isHlsPlayback, requestPlayerFullscreen, selectHlsPlaybackMode, SecureVideoPlayer, togglePlayerFullscreen } from "./index";
 
 describe("HLS source detection", () => {
   it("accepts standard and alternative HLS MIME types", () => {
@@ -107,5 +107,34 @@ describe("SecureVideoPlayer poster", () => {
     expect(markup).toContain('class="svp-poster"');
     expect(markup).toContain('src="https://media.example/images/video-123/poster.jpg"');
     expect(markup).toContain('aria-label="เล่นวิดีโอ วิดีโอทดสอบ"');
+  });
+});
+
+
+describe("signed URL replacement", () => {
+  it.each([false, true])("restores position and respects paused=%s", async (paused) => {
+    const events = new EventTarget();
+    const play = vi.fn().mockResolvedValue(undefined);
+    const video = Object.assign(events, { currentTime: 330, paused, ended: false, play });
+    const cleanup = preservePlaybackOnSourceChange(video as unknown as HTMLVideoElement);
+    video.currentTime = 0;
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(video.currentTime).toBe(330);
+    expect(play).toHaveBeenCalledTimes(paused ? 0 : 1);
+    video.currentTime = 400;
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(video.currentTime).toBe(400);
+    cleanup();
+  });
+
+  it("removes a pending restoration when replaced or unmounted", () => {
+    const video = Object.assign(new EventTarget(), {
+      currentTime: 330, paused: false, ended: false, play: vi.fn()
+    });
+    preservePlaybackOnSourceChange(video as unknown as HTMLVideoElement)();
+    video.currentTime = 0;
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(video.currentTime).toBe(0);
+    expect(video.play).not.toHaveBeenCalled();
   });
 });
