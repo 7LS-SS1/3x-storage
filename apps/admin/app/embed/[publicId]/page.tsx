@@ -68,18 +68,33 @@ export default async function EmbedPage({
     "Content-Type": "application/json"
   };
   if (parentReferer) authorizationHeaders.Referer = parentReferer;
-  const response = await fetch(`${apiBaseUrl}/api/v1/playback/authorize`, {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/api/v1/playback/authorize`, {
     method: "POST",
     cache: "no-store",
     headers: authorizationHeaders,
     body: JSON.stringify({
       videoPublicId: publicId,
       fileId: file.id
-    })
-  });
+    }),
+    signal: AbortSignal.timeout(15_000)
+    });
+  } catch {
+    console.error("[embed-authorize]", { publicId, code: "API_UNREACHABLE" });
+    return <EmbedError message="เชื่อมต่อระบบเล่นวิดีโอไม่ได้ กรุณาลองใหม่ (API_UNREACHABLE)" />;
+  }
   if (!response.ok) {
+    console.error("[embed-authorize]", { publicId, status: response.status });
+    const message = response.status === 429
+      ? "มีคำขอรับชมจำนวนมาก กรุณารอประมาณ 1 นาทีแล้วลองใหม่"
+      : response.status === 403
+        ? "ระบบไม่อนุญาตคำขอรับชมนี้ กรุณาติดต่อผู้ดูแล"
+        : response.status >= 500
+          ? "ระบบเล่นวิดีโอขัดข้องชั่วคราว กรุณาลองใหม่"
+          : "ไม่สามารถขอสิทธิ์รับชมได้ กรุณาติดต่อผู้ดูแล";
     return (
-      <EmbedError message="โดเมนนี้ไม่ได้รับอนุญาต หรือวิดีโอยังไม่พร้อมรับชม" />
+      <EmbedError message={`${message} (HTTP ${response.status})`} />
     );
   }
   const grant = await response.json() as PlaybackGrant;
