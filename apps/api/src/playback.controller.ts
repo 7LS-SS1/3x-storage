@@ -179,7 +179,7 @@ export class PlaybackController {
         }
       })
     ]);
-    const allowAllDomains = systemConfig?.allowAllDomains ?? false;
+    const allowAllDomains = systemConfig?.allowAllDomains ?? true;
     const match = matchAllowedDomain(source, video?.allowedDomains);
     const file = video ? preferredFile(video.files) : undefined;
     if (!video || (!allowAllDomains && !match) || !file) {
@@ -261,7 +261,7 @@ export class PlaybackController {
     if (
       !video?.posterKey ||
       !file ||
-      (!(systemConfig?.allowAllDomains ?? false) && !match)
+      (!(systemConfig?.allowAllDomains ?? true) && !match)
     ) {
       throw new ForbiddenException("ไม่พบรูปหน้าปก หรือโดเมนนี้ไม่ได้รับอนุญาต");
     }
@@ -331,7 +331,7 @@ export class PlaybackController {
       !session ||
       !safeHexEqual(parsed.data.eventToken, expected) ||
       Date.now() - session.createdAt.getTime() > maximumSessionAgeMs ||
-      (!(systemConfig?.allowAllDomains ?? false) && !session.allowedDomain?.active) ||
+      (!(systemConfig?.allowAllDomains ?? true) && !session.allowedDomain?.active) ||
       !["UPLOADED", "READY"].includes(session.video.status) ||
       session.video.deletedAt ||
       !file

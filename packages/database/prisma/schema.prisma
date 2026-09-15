@@ -110,7 +110,7 @@ model SystemConfig {
   id                    Int       @id @default(1)
   siteName              String    @default("สนามคลาวด์")
   uploadsEnabled        Boolean   @default(true)
-  allowAllDomains       Boolean   @default(false)
+  allowAllDomains       Boolean   @default(true)
   defaultCategoryId     String?
   defaultCategory       Category? @relation(fields: [defaultCategoryId], references: [id], onDelete: SetNull)
   supportEmail          String?

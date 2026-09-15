@@ -130,7 +130,7 @@ export class DomainsController {
     ]);
     return {
       accessPolicy: {
-        allowAllDomains: systemConfig?.allowAllDomains ?? false
+        allowAllDomains: systemConfig?.allowAllDomains ?? true
       },
       domains: domains.map(domain => ({
         ...domain,

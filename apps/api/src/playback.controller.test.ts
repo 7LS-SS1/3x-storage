@@ -164,10 +164,10 @@ describe("PlaybackController authorization refresh", () => {
     );
   });
 
-  it("authorizes an unlisted HTTPS domain while allow-all mode is enabled", async () => {
+  it.each([null, { allowAllDomains: true }])("authorizes an unlisted HTTPS domain with default or open policy: %j", async (policy) => {
     const create = vi.fn().mockResolvedValue({});
     const prisma = {
-      systemConfig: { findUnique: vi.fn().mockResolvedValue({ allowAllDomains: true }) },
+      systemConfig: { findUnique: vi.fn().mockResolvedValue(policy) },
       video: {
         findFirst: vi.fn().mockResolvedValue({
           id: "video-database-id",
