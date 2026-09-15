@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+import { isIP } from "node:net";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { EmbedPlayer } from "@/components/embed-player";
@@ -68,6 +70,19 @@ export default async function EmbedPage({
     "Content-Type": "application/json"
   };
   if (parentReferer) authorizationHeaders.Referer = parentReferer;
+  // Use the nearest proxy's appended address, never the client-controlled first entry.
+  const viewerIp = process.env.TRUST_PROXY === "true"
+    ? requestHeaders.get("x-forwarded-for")?.split(",").at(-1)?.trim()
+    : undefined;
+  const trackerSecret = process.env.SESSION_SECRET;
+  if (viewerIp && isIP(viewerIp) && trackerSecret && trackerSecret.length >= 32) {
+    const viewer = createHmac("sha256", trackerSecret).update(`embed-viewer:${viewerIp}`).digest("hex");
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const payload = `${timestamp}:${viewer}`;
+    const signature = createHmac("sha256", trackerSecret).update(payload).digest("hex");
+    authorizationHeaders["x-embed-viewer"] = `${payload}:${signature}`;
+  }
+
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl}/api/v1/playback/authorize`, {

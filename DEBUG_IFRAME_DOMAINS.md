@@ -37,3 +37,10 @@ Confirmed source-level defect: refreshing authorization replaces the media URL, 
 Refresh failures now log `[playback-refresh]` with the HTTP status and endpoint path, without tokens or signed media URLs. The exact production failure is still unconfirmed pending the affected embed URL and browser network evidence. About 330 seconds is a reported symptom, not a confirmed fixed timeout.
 
 Validation: player tests 14/14 passed, including position restoration at 330 seconds, preserving pause, and listener cleanup. Player TypeScript passed. Full browser playback beyond expiry and production deployment remain unverified.
+
+## Confirmed HTTP 429 on embed authorization
+The user screenshot now shows HTTP 429. The authorize endpoint permits 30 requests/minute per request IP; server-rendered embed pages call it from the admin server without a viewer identifier, pooling viewers behind the admin IP.
+
+Fix: admin signs a short-lived, hashed viewer identifier using SESSION_SECRET, from the nearest proxy-appended X-Forwarded-For address when TRUST_PROXY=true. API verifies the signature and timestamp before selecting a per-viewer authorization bucket. Missing/invalid identifiers retain IP limiting. No arbitrary client header is trusted as a tracker. Both admin and API must deploy together with matching SESSION_SECRET. The actual proxy chain must append the visitor address for correct granularity; missing/unusable proxy data falls back to the original IP bucket.
+
+API suite: 39 tests passed. API/admin TypeScript passed after correcting the tracker callback type. Live deployment and viewer separation on the production proxy remain unverified. This patch addresses initial authorization 429, not a verified fix for long-duration refresh failures.

@@ -1,3 +1,4 @@
+import { playbackTracker } from "./playback-tracker";
 import { Body, Controller, ForbiddenException, Get, Headers, Param, Post, Res, ServiceUnavailableException } from "@nestjs/common";
 import type { Response } from "express";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
@@ -134,7 +135,7 @@ export class PlaybackController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Post("authorize")
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Throttle({ default: { limit: 30, ttl: 60_000, getTracker: playbackTracker } })
   async authorize(
     @Headers("referer") referer: string | undefined,
     @Body() untrustedBody: unknown,
