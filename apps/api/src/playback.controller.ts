@@ -1,9 +1,8 @@
-import { playbackTracker } from "./playback-tracker";
 import { Body, Controller, ForbiddenException, Get, Headers, Param, Post, Res, ServiceUnavailableException } from "@nestjs/common";
 import type { Response } from "express";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { Throttle } from "@nestjs/throttler";
+import { SkipThrottle } from "@nestjs/throttler";
 import { domainMatches, normalizeDomain, signMedia } from "@video/shared";
 import { PrismaService } from "./prisma.service";
 import { createPosterDeliveryUrl } from "./poster-delivery-url";
@@ -131,11 +130,11 @@ function matchAllowedDomain(
 }
 
 @Controller("playback")
+@SkipThrottle()
 export class PlaybackController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Post("authorize")
-  @Throttle({ default: { limit: 30, ttl: 60_000, getTracker: playbackTracker } })
   async authorize(
     @Headers("referer") referer: string | undefined,
     @Body() untrustedBody: unknown,
@@ -220,7 +219,6 @@ export class PlaybackController {
   }
 
   @Get("poster/:videoPublicId")
-  @Throttle({ default: { limit: 120, ttl: 60_000 } })
   async poster(
     @Headers("referer") referer: string | undefined,
     @Param("videoPublicId") untrustedVideoPublicId: string,
@@ -280,7 +278,6 @@ export class PlaybackController {
   }
 
   @Post("refresh")
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async refresh(
     @Body() untrustedBody: unknown,
     @Res({ passthrough: true }) response: Response
@@ -364,7 +361,6 @@ export class PlaybackController {
   }
 
   @Post("events")
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async event(
     @Headers("x-forwarded-for") forwardedFor: string | undefined,
     @Body() untrustedBody: unknown
