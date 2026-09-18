@@ -96,6 +96,9 @@ export class StorageService {
         endpoint: config.endpoint,
         region: config.region,
         forcePathStyle: config.forcePathStyle,
+        // The browser supplies the body after signing. Do not sign the CRC32
+        // of an empty body (AAAAAA==) into multipart upload URLs.
+        requestChecksumCalculation: "WHEN_REQUIRED",
         credentials: {
           accessKeyId: config.accessKeyId,
           secretAccessKey: config.secretAccessKey

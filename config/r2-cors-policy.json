@@ -1,7 +1,9 @@
 [
   {
     "AllowedOrigins": [
-      "http://localhost:3000"
+      "http://localhost:3000",
+      "https://3x-storage.76.13.223.158.sslip.io",
+      "https://3x-storage.206.189.129.122.sslip.io"
     ],
     "AllowedMethods": [
       "GET",

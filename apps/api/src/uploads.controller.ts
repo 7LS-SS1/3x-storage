@@ -11,6 +11,7 @@ import {
   UseGuards
 } from "@nestjs/common";
 import type { UploadSession } from "@prisma/client";
+import { SkipThrottle } from "@nestjs/throttler";
 import { randomUUID } from "node:crypto";
 import { extname } from "node:path";
 import { z } from "zod";
@@ -406,6 +407,7 @@ export class UploadsController {
   }
 
   @Post(":id/parts/presign")
+  @SkipThrottle()
   async presign(
     @Req() request: AdminRequest,
     @Param("id") id: string,
@@ -449,6 +451,7 @@ export class UploadsController {
   }
 
   @Post(":id/parts/record")
+  @SkipThrottle()
   async recordPart(
     @Req() request: AdminRequest,
     @Param("id") id: string,

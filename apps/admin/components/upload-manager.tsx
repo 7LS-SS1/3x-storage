@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
 import { GoogleDriveImporter } from "@/components/google-drive-importer";
-import { apiRequest } from "@/lib/api-client";
+import { apiRequest, uploadApiRequest, ApiRequestError } from "@/lib/api-client";
 
 type Category = { id: string; name: string; active: boolean };
 type UploadStatus =
@@ -418,18 +418,20 @@ export function UploadManager() {
               inflight.delete(partNumber);
               reportProgress();
               if (stopped || cancelled.current.has(localId)) throw error;
-              const retryable = !(error instanceof UploadPartError) || error.retryable;
+              const retryable = error instanceof ApiRequestError
+                ? error.status === 429 || error.status === 408 || error.status >= 500
+                : !(error instanceof UploadPartError) || error.retryable;
               if (!retryable || attempt === maxUploadPartAttempts) {
                 const message = error instanceof Error ? error.message : "ไม่ทราบสาเหตุ";
                 throw new Error(
                   `ส่วนที่ ${partNumber} อัปโหลดไม่สำเร็จหลังลอง ${attempt} ครั้ง: ${message}`
                 );
               }
-              await wait(retryDelay(attempt));
+              await wait(Math.max(retryDelay(attempt), error instanceof ApiRequestError ? error.retryAfterMs : 0));
             }
           }
           if (!etag) throw new Error(`ส่วนที่ ${partNumber} ไม่ได้รับ ETag`);
-          await apiRequest(`/uploads/${session.id}/parts/record`, {
+          await uploadApiRequest(`/uploads/${session.id}/parts/record`, {
             method: "POST",
             body: JSON.stringify({
               partNumber,
