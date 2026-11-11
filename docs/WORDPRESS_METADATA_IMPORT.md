@@ -2,9 +2,29 @@
 
 ส่งมอบ 12 พฤศจิกายน 2026 (Asia/Bangkok)
 
-ต่อยอดจากปลั๊กอิน export ของ RetroTube โดยเพิ่มหน้าจอ `/metadata-import` ใน App สำหรับบัญชี ADMIN/SYSTEM ไม่เชื่อม 7M/AURUM Video Core และไม่ส่ง request กลับ WordPress
+ต่อยอดจากปลั๊กอิน export ของ RetroTube โดยเพิ่มหน้าจอ `/metadata-import` ใน App สำหรับบัญชี ADMIN/SYSTEM ไม่เชื่อม 7M/AURUM Video Core ไม่แก้ข้อมูล WordPress; การเทียบรูปอ่าน URL รูปปกต้นทางเท่านั้น
 
 ## วิธีใช้
+
+### ค้นหาจากภาพหน้าปกจริง
+
+หลังอัปโหลดหรือเปิด batch ระบบเทียบภาพจาก `image_url` / `featured_image_url` กับรูป `Video.posterKey` ทั้งคลังโดยอัตโนมัติ ไม่ใช้ชื่อรูปเป็นหลักฐานว่าภาพเหมือนกัน และไม่ต้องมี ID ตรงกัน รูปจาก CSV สรุปใช้ค้นหาคู่ได้ แต่คำอธิบายบทความยังต้องใช้ JSON
+
+- แสดงรูปต้นทางคู่กับรูปในแอปและเรียงคู่ตามความคล้าย สูงสุด 20 คู่ต่อบทความ ไม่มีการเลือกคู่หรืออนุมัติให้เอง
+- SHA-256 เท่ากันหมายถึงไฟล์รูปตรงกันทุก byte ส่วนภาพย่อ/บีบอัดใหม่เทียบสีและโครงสร้างภาพที่ปรับขนาดแล้ว คะแนนตั้งแต่ 85/100 จึงเป็นตัวเลือก คะแนนไม่ใช่ความน่าจะเป็น ภาพเดียวกันอาจใช้กับหลายวิดีโอ ต้องเล่นตรวจและอนุมัติก่อนเสมอ
+- ภาพตัดขอบมาก ใส่กรอบ เปลี่ยนสี/ลายน้ำ หรือเปลี่ยนปกอาจไม่พบ ไม่มีการรับรองว่าค้นพบทุกกรณี ชื่อไฟล์และ Video ID/publicId ไม่ถูกแก้เพื่อให้ตรงกัน
+- อ่านครั้งละ 16 วิดีโอ เรียงด้วย ID และจำขอบเขต ID สูงสุดเมื่อเริ่ม ไม่โหลดไฟล์วิดีโอ เปรียบเทียบปกหนึ่งครั้งกับบทความสูงสุด 25 รายการในหน้าที่เปิด แสดงยอดตรวจ/เทียบได้/ไม่มีปก/อ่านไม่ได้ พร้อมเหตุผลแยกตามรายการ การเปลี่ยนหน้าหรือหยุดจะยกเลิกคำขอใน browser; server อาจทำ page ที่เริ่มแล้วต่อจนจบ แต่ไม่เริ่ม page ถัดไป
+- รองรับ JPEG/PNG/WebP ภาพนิ่ง สูงสุด 5 MiB และ 20 ล้านพิกเซล อ่านผ่าน HTTP(S) พอร์ตมาตรฐานและ public IPv4 เท่านั้น ป้องกัน DNS rebinding ด้วยการ pin IP และตรวจทุก redirect ไม่ส่ง cookie/credential ไปเว็บไซต์ต้นทาง; 401/403, timeout, IPv6-only หรือภาพไม่รองรับเป็นข้อจำกัด ไม่ใช่ข้อสรุปว่าไม่ใช่ภาพเดียวกัน
+- แสดงรูปผ่าน JPEG thumbnail ที่ decode ใหม่ ไม่แสดง SVG/HTML/iframe จากไฟล์นำเข้า มี cache ในหน่วยความจำสูงสุด 64 MiB/8192 ภาพ อายุ 10 นาที และ cache ความผิดพลาด 1 นาที; รูปที่แทนที่ URL/key เดิมอาจเห็นค่าเก่าจนหมดอายุ
+- Endpoint `POST /metadata-import/batches/:id/cover-scan` ใช้ ADMIN/SYSTEM + session + CSRF เช่นเดียวกับการนำเข้า ตอบ `private, no-store`; จำกัดสองคำขอพร้อมกันต่อ API process และอ่านรูปพร้อมกันครั้งละสี่รูปต่อคำขอ ไม่มี DB/R2 writes จากการค้นหา
+
+การเปรียบเทียบนี้เพิ่มการอ่านรูปปกจาก WordPress และ storage และใช้ CPU decode รูป ต้องเริ่มตรวจ production 1–2 บทความ รวมทั้งเวลา/หน่วยความจำ/ผลรายการจริงก่อนขยายงาน การทดลองในเครื่องใช้รูปทรงทั่วไปและ storage double ยังไม่ยืนยันการค้นพบภาพจริงของผู้ใช้หรือการอ่าน R2 production
+
+ไม่เพิ่ม schema/migration และไม่เปลี่ยน media/iframe/access contracts; backup/restore migration และ worker draining ไม่เกี่ยวกับการเปลี่ยนนี้เพราะไม่มีการแก้ฐานข้อมูลหรือส่งงาน worker การย้อนรุ่นใช้ revision ก่อนเพิ่ม cover scan โดยไม่มีข้อมูลให้ย้อนคืนจาก scan การอนุมัติ metadata ยังคงใช้ transaction/audit/rollback เดิม
+
+การทดสอบ: metadata parser/matching/image/network/HTTP+PostgreSQL 59 tests ผ่าน และ API/admin TypeScript ผ่าน; browser จริง Next+Nest+PostgreSQL ผ่านการค้นหาจากรูปโดยไม่มี ID, ภาพคู่, desktop/mobile, หยุด/เริ่ม, การเล่นก่อนอนุมัติ, apply และ rollback ด้วยข้อมูลจำลอง ชุด API รวมเคยพบ Google Drive ciphertext tamper test เดิมล้มเหลวหนึ่งกรณี (นอกส่วนที่แก้) จึงไม่รายงานว่าชุดรวมผ่านทั้งหมด ภาพตัวอย่างอยู่ใน `artifacts/metadata-import/cover-review-*.png`
+
+Windows ที่ worktree กับ Next dependencies อยู่ต่างไดรฟ์อาจ build เส้นทาง `./D:/...` ผิด: browser harness รองรับ `METADATA_TEST_ADMIN_CWD` ให้ชี้สำเนา admin จาก revision เดียวกันบนไดรฟ์ของ dependencies โดยไม่เปลี่ยน config production เปิดโหมดรูปจำลองด้วย `METADATA_TEST_COVERS=1`
 
 ### การวินิจฉัยรายการที่ไม่พบคู่และคำอธิบาย (12 พฤศจิกายน 2026)
 
@@ -43,7 +63,7 @@
 - รูป URL เป็น **metadata เพิ่มเติม** ไม่ดาวน์โหลดรูป ไม่ทำหน้าที่แทนปกใน player และไม่เปลี่ยน `posterKey` หรือ `VideoFile` รูปจะถูกแสดงเป็นข้อความในหน้าตรวจสอบ
 - schema เดิมมี categoryId เดียวและยังไม่มี tags relation: ทุกหมวดหมู่ แท็ก actor/custom taxonomy รวม HTML/shortcode/embed/custom fields เก็บครบใน raw source และแสดงข้อจำกัด ไม่ตัดเหลือหมวดหมู่แรกเงียบ ๆ
 - source mapping ที่บันทึกแล้วจะไม่เปลี่ยนไปวิดีโออื่นโดยปริยาย ต้องย้อนคืนการจับคู่เดิมจนไม่มี active mapping ก่อน แล้วเลือกคู่ใหม่เอง
-- ไม่มีการสร้าง Video ใหม่ ไม่มี fetch/execute iframe หรือ HTML จากไฟล์ การค้นหา/บันทึกไม่เรียก storage/R2 ส่วนปุ่มเล่นใช้ signed preview เดิม ไม่แตะ ID/publicId/เจ้าของ/storage keys/ไฟล์สื่อ/access domains
+- ไม่มีการสร้าง Video ใหม่ ไม่มี fetch/execute iframe หรือ HTML จากไฟล์ การค้นหา ID/บันทึกไม่เรียก storage/R2; การเทียบภาพอ่านเฉพาะรูปปก และปุ่มเล่นใช้ signed preview เดิม ไม่แตะ ID/publicId/เจ้าของ/storage keys/ไฟล์สื่อ/access domains
 
 ตัวอย่างไฟล์: `artifacts/metadata-import/sample-unmapped.json`, `artifacts/metadata-import/sample.csv` ไม่มี target_video_id เพื่อให้ทดสอบการเลือกคู่เองก่อน
 
@@ -74,7 +94,7 @@ Rollback ตรวจ active source change และค่า metadata ปัจ
 - mutation ตรวจ origin + CSRF header/cookie + session hash เดิมของระบบ ไม่เชื่อถือ actor จาก request body
 - apply ต้อง `confirm:true` และ 1–2 row/token ที่ไม่ซ้ำ ฝั่ง API บังคับขอบเขตนี้ด้วย ไม่ใช่แค่ปุ่มบน UI
 - schema ของ preview/confirm เป็น strict allowlist จึงส่ง owner/storageKey/allowedDomainIds หรือฟิลด์อื่นมาแก้ไม่ได้
-- Raw source เป็นข้อมูลภายใน อ่านได้เฉพาะผู้ดูแล ไม่ใช้ dangerouslySetInnerHTML ไม่ render iframe หรือ fetch URL รูป
+- Raw source เป็นข้อมูลภายใน อ่านได้เฉพาะผู้ดูแล ไม่ใช้ dangerouslySetInnerHTML ไม่ render iframe; URL รูปถูกอ่านเฉพาะบริการเทียบภาพที่จำกัด public IP/ชนิด/ขนาด และแสดง thumbnail JPEG ที่ decode ใหม่
 - ไม่มี credentials ใหม่ใน .env และไม่เพิ่ม dependency production
 
 ## สิ่งที่ตรวจพบก่อนพัฒนา

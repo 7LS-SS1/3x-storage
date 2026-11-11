@@ -17,7 +17,7 @@ async function main(){
   });fs.writeFileSync(fixture,Buffer.from(bytes));await generator.close();
   function start(script,args,cwd){const child=spawn(process.execPath,[script,...args],{cwd,env:{...env,METADATA_TEST_MEDIA_FILE:fixture},windowsHide:true,stdio:['ignore','pipe','pipe']});children.push(child);let log='';child.stdout.on('data',d=>{log+=d});child.stderr.on('data',d=>{log+=d});child.on('exit',code=>{if(!shuttingDown&&code&&code!==0)console.error('Fixture process failed',log.slice(-2000));});return child;}
   start(path.join(root,'scripts/metadata-import-local-runtime.cjs'),[],root);
-  start(req.resolve('next/dist/bin/next'),['dev','--port','3008'],path.join(root,'apps/admin'));
+  start(req.resolve('next/dist/bin/next'),['dev','--port','3008'],process.env.METADATA_TEST_ADMIN_CWD||path.join(root,'apps/admin'));
   for(let i=0;i<90;i++){try{const r=await fetch('http://localhost:4008/api/v1/metadata-import/batches',{signal:AbortSignal.timeout(5000)});if(r.status===401)break;}catch{}await new Promise(r=>setTimeout(r,500));if(i===89)throw new Error('API startup timed out');}
   for(let i=0;i<90;i++){try{const r=await fetch('http://localhost:3008/login',{signal:AbortSignal.timeout(10000)});if(r.ok)break;}catch{}await new Promise(r=>setTimeout(r,500));if(i===89)throw new Error('Next startup timed out');}
   const page=await browser.newPage({viewport:{width:1440,height:1100}});page.setDefaultTimeout(90000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -46,6 +46,23 @@ async function main(){
   const history=page.locator('details').filter({has:page.locator('summary',{hasText:'metadata-browser-video-1'})}).first();await history.locator('summary').click();await history.getByRole('button',{name:'ตรวจและย้อนคืน',exact:true}).click();await history.getByRole('button',{name:'ยืนยันย้อนคืน',exact:true}).click();await page.waitForFunction(()=>document.querySelector('pre[role=status]')?.textContent?.includes('ย้อนคืนสำเร็จ'));
   await prisma.$connect();const reverted=await prisma.video.findUniqueOrThrow({where:{id:before.id}});await prisma.$disconnect();assert.equal(reverted.title,before.title);assert.equal(reverted.description,before.description);
   const staff=await browser.newPage();await staff.goto('http://localhost:3008/login');await staff.locator('#email').fill('metadata-staff@example.test');await staff.locator('#password').fill('Local-Metadata-Test-2026!');await staff.getByRole('button',{name:'เข้าสู่ระบบ',exact:true}).click();await staff.waitForURL(/dashboard/);await staff.goto('http://localhost:3008/metadata-import');await staff.waitForURL(/dashboard/);
+  if(process.env.METADATA_TEST_COVERS==='1'){
+   const coverRecord={site_url:`https://cover-${Date.now()}.example.test`,post_id:31,title:'บทความทดสอบรูปปก ไม่มี ID ตรงกัน',description:'ข้อความต้นฉบับทั่วไป',featured_image_url:'https://example.test/cover-fixture.png'};
+   await page.getByLabel('ไฟล์ metadata',{exact:true}).setInputFiles({name:'cover-only.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify([coverRecord]))});await page.getByRole('button',{name:'อัปโหลดและค้นหาคู่',exact:true}).click();
+   const coverRow=page.getByRole('article',{name:'ตรวจบทความ 31',exact:true});await coverRow.waitFor();
+   const progress=page.getByRole('region',{name:'สถานะเปรียบเทียบรูป',exact:true});
+   await progress.getByRole('button',{name:'หยุดเทียบรูป',exact:true}).click();assert.match(await progress.innerText(),/หยุดก่อนครบคลัง/);
+   await progress.getByRole('button',{name:'เทียบรูปใหม่',exact:true}).click();
+   await page.waitForFunction(()=>document.querySelector('[aria-label="สถานะเปรียบเทียบรูป"]')?.textContent?.includes('เทียบภาพเสร็จแล้ว'),null,{timeout:120000});
+   assert.match(await coverRow.innerText(),/ไฟล์รูปปกตรงกันทุก byte/);
+   assert.match(await coverRow.innerText(),/metadata-browser-video-1/);
+   assert.equal(await coverRow.getByRole('button',{name:'ตรวจชื่อเรื่อง/คำอธิบายก่อนอนุมัติ',exact:true}).isDisabled(),true);
+   const pair=coverRow.locator('[aria-label="เปรียบเทียบภาพหน้าปก"]');assert.equal(await pair.locator('img').count(),2);
+   assert.equal(await pair.locator('img').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0)),true);
+   await page.setViewportSize({width:1440,height:1000});await pair.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,'cover-review-desktop.png')});
+   await page.setViewportSize({width:390,height:844});await pair.scrollIntoViewIfNeeded();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);await page.screenshot({path:path.join(out,'cover-review-mobile.png')});
+   console.log('METADATA_COVER_BROWSER_OK automatic cover-only match with unrelated IDs, paired decoded thumbnails, progress, stop/restart, approval remains disabled, desktop/mobile; synthetic images, no production R2');
+  }
   assert.deepEqual(errors,[]);
   console.log('METADATA_BATCH_REVIEW_BROWSER_OK immediate candidates after upload, unmatched row, real playback, attestation gate, switching invalidation, source-only title/description approval, PostgreSQL persistence, unchanged protected fields, rollback, desktop/mobile; local media storage double');
  }finally{shuttingDown=true;await browser.close();for(const child of children){if(child.exitCode===null){if(process.platform==='win32')await new Promise(resolve=>{const k=spawn('taskkill',['/PID',String(child.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});k.on('exit',resolve);});else child.kill();}}fs.rmSync(fixture,{force:true});}

@@ -1,0 +1,23 @@
+{
+  "date_asia_bangkok": "2026-11-12",
+  "scope": "Cover image comparison with human video-content approval",
+  "local": {
+    "focused_tests_passed": 59,
+    "suites": ["metadata-cover", "metadata-cover-network", "metadata-import.parser", "metadata-import-matching", "metadata-import.integration"],
+    "api_typecheck": "passed",
+    "admin_typecheck": "passed",
+    "browser": "passed: actual Next, Nest and isolated PostgreSQL; synthetic cover and video storage doubles",
+    "browser_checks": ["automatic matching using image pixels with no matching IDs", "paired JPEG thumbnails", "scan counts and explicit failed/missing cover counts", "stop and restart", "approval disabled before playback and attestation", "source-only title/description apply", "protected fields unchanged", "rollback", "desktop 1440 and mobile 390 without horizontal overflow"],
+    "image_checks": ["SHA-256 identical bytes", "resized and recompressed image", "unrelated image below threshold", "invalid and oversized images", "SVG rejected", "public IP pinning", "private and mixed DNS rejected", "redirect revalidation", "malformed redirect rejected", "HTTP and content-type failures remain inconclusive", "bounded body", "pagination without duplicate candidates", "ADMIN/CSRF enforcement and no database writes from scan"],
+    "broader_api_run": "91 passed, 1 failed in pre-existing Google Drive ciphertext tamper test before the new 8 network tests; do not treat full API suite as passed",
+    "windows_runtime": "Release admin sources copied to D drive test-results with dependencies on same drive to avoid Next cross-drive resolution error"
+  },
+  "production": {
+    "deployed_by_agent": false,
+    "real_user_cover_match_verified": false,
+    "r2_image_read_verified": false,
+    "new_migration_required": false,
+    "canary_required": "Verify 1-2 source articles, paired real covers, playback, timing and resource usage after deployment"
+  },
+  "limits": ["Still-image JPEG/PNG/WebP, 5 MiB and 20 million pixels", "Public IPv4 HTTP(S) standard ports; no credentials or source cookies", "16 videos per scan page, 4 concurrent image reads, 2 scan requests per API process", "64 MiB image cache, 10 minute TTL; failure cache 1 minute", "85/100 threshold and top 20 suggestions per source article", "Similarity score is not probability or confirmed video identity", "Strong crops, new covers and overlays may not match", "Cancellation stops subsequent pages; an already-running bounded server page may complete"]
+}

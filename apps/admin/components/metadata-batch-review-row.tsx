@@ -4,8 +4,9 @@ import { useState } from "react";
 import { SecureVideoPlayer } from "@video/player";
 import { apiRequest } from "@/lib/api-client";
 import styles from "./metadata-import-manager.module.css";
+import type { CoverResult } from "./metadata-cover-scan";
 
-type Candidate = { id: string; publicId: string; title: string; evidence: string[]; fileIdentity?: string; _count?: { files: number }; files?: { id: string; filename: string; sizeBytes: string; mimeType: string; width: number | null; height: number | null }[] };
+export type Candidate = { id: string; publicId: string; title: string; evidence: string[]; cover?: { score: number; exact: boolean; thumbnail: string }; fileIdentity?: string; _count?: { files: number }; files?: { id: string; filename: string; sizeBytes: string; mimeType: string; width: number | null; height: number | null }[] };
 export type TextField = "title" | "description";
 export type BatchReviewRow = {
   id: string; ordinal: number; siteUrl: string | null; postId: string | null; status: string;
@@ -17,7 +18,8 @@ export type BatchReviewRow = {
 type Preview = { title: string; url: string; mimeType: string; posterUrl: string | null };
 const statuses: Record<string, string> = { PENDING: "รอตรวจและอนุมัติ", INVALID: "ข้อมูลไม่ถูกต้อง", APPLIED: "บันทึกแล้ว", NOOP: "ข้อมูลเดิม ไม่เปลี่ยนซ้ำ", ROLLED_BACK: "ย้อนคืนแล้ว" };
 
-export function MetadataBatchReviewRow({ row, disabled, prepared, onPrepare, onInvalidate }: {
+export function MetadataBatchReviewRow({ row, cover, disabled, prepared, onPrepare, onInvalidate }: {
+  cover?: CoverResult;
   row: BatchReviewRow; disabled: boolean; prepared: boolean;
   onPrepare: (rowId: string, targetVideoId: string, fields: TextField[]) => Promise<void>;
   onInvalidate: (rowId: string) => void;
@@ -29,7 +31,7 @@ export function MetadataBatchReviewRow({ row, disabled, prepared, onPrepare, onI
   const [fields, setFields] = useState<TextField[]>(["title", "description"].filter(f => row.normalizedJson[f as TextField]?.trim()) as TextField[]);
   const [raw, setRaw] = useState<unknown>(null);
   const n = row.normalizedJson;
-  const candidates = [...(row.discovery?.candidates || []), ...manual.filter(v => !row.discovery?.candidates.some(c => c.id === v.id))];
+  const candidates = [...new Map([...manual, ...(row.discovery?.candidates || []), ...(cover?.candidates || [])].map(c => [c.id, c])).values()].sort((a, b) => (b.cover?.score || 0) - (a.cover?.score || 0));
   async function action(work: () => Promise<void>) {
     if (busy || disabled) return; setBusy(true); setError("");
     try { await work(); } catch (e) { setError(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ"); } finally { setBusy(false); }
@@ -54,6 +56,8 @@ export function MetadataBatchReviewRow({ row, disabled, prepared, onPrepare, onI
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {row.status === "PENDING" && <>
       <h4>รายการวิดีโอที่พบใน 3x-storage ({candidates.length})</h4>
+      {cover?.error && <p className={styles.note}>เปรียบเทียบรูปต้นทางไม่ได้: {cover.error}</p>}
+      {cover?.source && !cover.candidates.length && <figure className={styles.coverSource}><img src={cover.source} alt="รูปปกต้นทางจากไฟล์นำเข้า" /><figcaption>รูปปกต้นทาง — ยังไม่พบภาพใกล้เคียงในส่วนที่ตรวจแล้ว</figcaption></figure>}
       {row.discoveryError && <p className={styles.error}>{row.discoveryError}</p>}
       {!row.discoveryError && !candidates.length && <p>ไม่พบคู่จากข้อมูลอ้างอิง สามารถค้นหา Video ID หรือ publicId แบบตรงกันด้านล่าง</p>}
       {row.discovery?.warnings.map((w, i) => <p className={styles.note} key={i}>{w}</p>)}
@@ -61,6 +65,7 @@ export function MetadataBatchReviewRow({ row, disabled, prepared, onPrepare, onI
       {candidates.map(v => <section className={styles.candidate} key={v.id} aria-label={`วิดีโอ ${v.id}`}>
         <strong>{v.title}</strong><p>Video ID: <code>{v.id}</code> • publicId: <code>{v.publicId}</code></p>
         <ul>{v.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>
+        {v.cover && cover?.source && <div className={styles.coverPair} aria-label="เปรียบเทียบภาพหน้าปก"><figure><img src={cover.source} alt="รูปปกต้นทางจากไฟล์นำเข้า" /><figcaption>ต้นทาง WordPress</figcaption></figure><figure><img src={v.cover.thumbnail} alt={`รูปปกในแอป ${v.id}`} /><figcaption>รูปปกใน 3x-storage • {v.cover.exact ? "ไฟล์รูปตรงกัน" : `ความคล้าย ${v.cover.score}/100`}</figcaption></figure></div>}
         <details><summary>ข้อมูลไฟล์ในแอป</summary>{v.fileIdentity && <p>{v.fileIdentity}</p>}{v.files?.map(f => <p key={f.id}>{f.filename} • {f.mimeType} • {f.sizeBytes} bytes • {f.width && f.height ? `${f.width} × ${f.height}` : "ไม่ระบุความละเอียด"}</p>)}{(v._count?.files || 0) > (v.files?.length || 0) && <p>แสดง {v.files?.length || 0} จาก {v._count?.files} ไฟล์</p>}</details>
         <button disabled={busy || disabled} onClick={() => void play(v)}>เล่นวิดีโอนี้เพื่อตรวจสอบ</button>
         {target?.id === v.id && <small>กำลังตรวจวิดีโอที่เลือกนี้</small>}

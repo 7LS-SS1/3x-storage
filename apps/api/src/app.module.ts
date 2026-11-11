@@ -20,6 +20,8 @@ import { GoogleDriveService } from "./google-drive.service";
 import { MediaProcessingQueueService } from "./media-processing-queue.service";
 import { MetadataAdminGuard, MetadataImportController } from "./metadata-import.controller";
 import { MetadataImportService } from "./metadata-import.service";
+import { MetadataCoverController, MetadataCoverService } from "./metadata-cover.service";
+import { MetadataCoverImages } from "./metadata-cover-image";
 
 @Module({
   imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }])],
@@ -35,7 +37,8 @@ import { MetadataImportService } from "./metadata-import.service";
     AuditController,
     SystemSettingsController,
     GoogleDriveController,
-    MetadataImportController
+    MetadataImportController,
+    MetadataCoverController
   ],
   providers: [
     PrismaService,
@@ -47,6 +50,8 @@ import { MetadataImportService } from "./metadata-import.service";
     CsrfGuard,
     MetadataAdminGuard,
     MetadataImportService,
+    MetadataCoverService,
+    MetadataCoverImages,
     { provide: APP_GUARD, useClass: ThrottlerGuard }
   ]
 })

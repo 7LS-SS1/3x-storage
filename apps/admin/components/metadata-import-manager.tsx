@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api-client";
 import { MetadataBatchReviewRow, type BatchReviewRow, type TextField } from "./metadata-batch-review-row";
 import styles from "./metadata-import-manager.module.css";
+import { useMetadataCoverScan } from "./metadata-cover-scan";
 
 type Field = "title" | "description" | "categoryId" | "imageUrl";
 type Values = { title: string; description: string | null; categoryId: string | null; imageUrl: string | null };
@@ -20,6 +21,7 @@ export function MetadataImportManager() {
   const [file, setFile] = useState<File | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [plans, setPlans] = useState<Plan[]>([]), [confirm, setConfirm] = useState(false);
   const [history, setHistory] = useState<Change[]>([]), [historyPage, setHistoryPage] = useState(1), [historyTotal, setHistoryTotal] = useState(0), [rollbackId, setRollbackId] = useState<string | null>(null);
+  const coverScan = useMetadataCoverScan(batch?.id, page, rows.filter(r => r.status === "PENDING").map(r => r.id).join(","));
   async function action(work: () => Promise<void>) { if (busy) return; setBusy(true); setError(""); try { await work(); } catch (e) { setError(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ"); } finally { setBusy(false); } }
   async function loadBatches() { const r = await apiRequest<{ batches: Batch[] }>("/metadata-import/batches"); setBatches(r.batches); }
   async function loadBatch(id: string, p = 1) {
@@ -72,7 +74,8 @@ export function MetadataImportManager() {
     </section>
     {batch && <section className={styles.card} aria-label="รายการตรวจสอบ batch"><h2>2. เล่นตรวจรายการที่พบคู่</h2><p>Batch ID: <code>{batch.id}</code> • ทั้งหมด {total} บทความ</p><p>แสดงหน้าละ 25 บทความ ค้นหาคู่อัตโนมัติทุกครั้งที่เปิดหน้า อนุมัติครั้งละ 1–2 รายการ</p>
       {busy && !rows.length && <p role="status">กำลังค้นหาวิดีโอในแอปสำหรับหน้านี้…</p>}
-      {rows.map(row => <MetadataBatchReviewRow key={row.id + ":" + row.status} row={row} disabled={busy} prepared={plans.some(p => p.rowId === row.id)} onPrepare={prepare} onInvalidate={invalidate} />)}
+      {!!rows.length && <section className={styles.note} aria-label="สถานะเปรียบเทียบรูป"><strong>ค้นหาจากภาพหน้าปกจริง</strong><p role="status">{coverScan.state.running ? "กำลังเทียบภาพ" : coverScan.state.done ? "เทียบภาพเสร็จแล้ว" : "การเทียบภาพยังไม่ครบ"} • ตรวจ {coverScan.state.scanned}/{coverScan.state.total} วิดีโอ • เทียบได้ {coverScan.state.compared} • ไม่มีปก {coverScan.state.missing} • อ่านปกไม่ได้ {coverScan.state.failed}</p><p>แสดงภาพใกล้เคียงสูงสุด 20 คู่ต่อบทความ คะแนนเป็นความคล้ายของภาพ ไม่ยืนยันเนื้อหาวิดีโอ ภาพตัดขอบหรือเปลี่ยนปกมากอาจค้นไม่พบ</p>{coverScan.state.error && <p role="alert">{coverScan.state.error}</p>}{coverScan.state.running ? <button onClick={coverScan.stop}>หยุดเทียบรูป</button> : <button onClick={coverScan.restart}>เทียบรูปใหม่</button>}{!!coverScan.state.reasons.length && <details><summary>รายการปกที่อ่านไม่ได้และเหตุผล</summary>{coverScan.state.reasons.map((r, i) => <p key={`${r.videoId}:${i}`}>{r.videoId}: {r.reason}</p>)}</details>}</section>}
+      {rows.map(row => <MetadataBatchReviewRow key={row.id + ":" + row.status} row={row} cover={coverScan.results[row.id]} disabled={busy} prepared={plans.some(p => p.rowId === row.id)} onPrepare={prepare} onInvalidate={invalidate} />)}
       <div className={styles.controls}><button disabled={busy || page === 1} onClick={() => void action(() => loadBatch(batch.id, page - 1))}>ก่อนหน้า</button><span>หน้า {page} / {Math.max(1, Math.ceil(total / 25))}</span><button disabled={busy || page * 25 >= total} onClick={() => void action(() => loadBatch(batch.id, page + 1))}>ถัดไป</button><button disabled={busy} onClick={() => void action(() => loadBatch(batch.id, page))}>ค้นหาคู่หน้านี้ใหม่</button></div>
     </section>}
     {!!plans.length && <section className={styles.card} aria-label="อนุมัติข้อมูล"><h2>3. อนุมัติชื่อเรื่องและคำอธิบาย {plans.length} รายการ</h2>{plans.map(p => <article key={p.rowId}><h3>Video ID: {p.targetVideoId}</h3><p>publicId: {p.publicId}</p>{p.contentReviewedAt && <p>ยืนยันเนื้อหาตรงกันเมื่อ {date(p.contentReviewedAt)}</p>}{comparison(p.before, p.after, p.fields, true)}{!p.fields.length && <p>ชื่อเรื่องและคำอธิบายตรงกับข้อมูลเดิมแล้ว</p>}<button disabled={busy} onClick={() => invalidate(p.rowId)}>นำออกจากรายการอนุมัติ</button></article>)}<label className={styles.check}><input disabled={busy} type="checkbox" checked={confirm} onChange={e => setConfirm(e.target.checked)} />ฉันอนุมัติให้ 3x-storage อัปเดตชื่อเรื่อง/คำอธิบายตามข้อมูลก่อน–หลังนี้</label><button className={styles.primary} disabled={busy || !confirm} onClick={() => void apply()}>อนุมัติและบันทึก {plans.length} รายการ</button><p>ตัวอย่างมีอายุ 15 นาที หากข้อมูลเปลี่ยนระหว่างนี้ต้องตรวจใหม่</p></section>}

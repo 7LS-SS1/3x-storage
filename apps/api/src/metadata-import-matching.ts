@@ -41,6 +41,6 @@ export function metadataReferences(record: unknown, siteUrl: string | null, orig
   // Exporter's filename/original_filename fields describe an IMAGE, not a video.
   if (typeof raw.video_filename === "string" && /\.(mp4|m4v|webm|mov|mkv|avi|m3u8)$/i.test(raw.video_filename)) add({ kind: "filename", value: raw.video_filename, source: "video_filename" });
   if (limited) warnings.push("ข้อมูลอ้างอิงมีจำนวนมาก ตรวจเฉพาะช่วงแรกและใช้ค้นหาไม่เกิน 64 ค่า กรุณาตรวจต้นทางเพิ่มเติม");
-  if (!refs.length) warnings.push("ไม่มี ID จาก URL embed หรือชื่อไฟล์วิดีโอที่ใช้ค้นหาได้ กรุณาค้นหา ID เอง");
+  if (!refs.length) warnings.push("ไม่มี ID จาก URL embed หรือชื่อไฟล์วิดีโอที่ใช้ค้นหาได้ ใช้ผลเทียบรูปปกหรือค้นหา ID ด้วยตนเอง");
   return { references: refs, warnings };
 }

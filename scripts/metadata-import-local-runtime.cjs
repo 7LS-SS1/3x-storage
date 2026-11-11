@@ -9,6 +9,8 @@ const {NestFactory}=apiRequire('@nestjs/core');
 const {PrismaService}=require('../apps/api/dist/prisma.service');
 const {MetadataImportService}=require('../apps/api/dist/metadata-import.service');
 const {MetadataImportController,MetadataAdminGuard}=require('../apps/api/dist/metadata-import.controller');
+const {MetadataCoverController,MetadataCoverService}=require('../apps/api/dist/metadata-cover.service');
+const {fingerprintCover}=require('../apps/api/dist/metadata-cover-image');
 const {AdminSessionGuard,CsrfGuard}=require('../apps/api/dist/admin-auth.guard');
 const {CategoriesController}=require('../apps/api/dist/categories.controller');
 const {VideosController}=require('../apps/api/dist/videos.controller');
@@ -33,7 +35,15 @@ async function main(){
   }
  }
  class LocalModule{};
- Module({controllers:[MetadataImportController,CategoriesController,...(mediaServer?[VideosController]:[])],providers:[{provide:PrismaService,useValue:prisma},...(mediaServer?[{provide:StorageService,useValue:{createReadUrl:async(key)=>{if(!/^fixture\/[12]\/original\.webm$/.test(key))throw new Error('Fixture media only');return 'http://localhost:4018/fixture.webm';}}}]:[]),MetadataImportService,MetadataAdminGuard,AdminSessionGuard,CsrfGuard]})(LocalModule);
+ // Generic synthetic cover bytes only; no external images or R2 access in this runtime.
+ const sharp=apiRequire('sharp');
+ const coverBytes=await sharp(Buffer.from('<svg width="240" height="180"><rect width="240" height="180" fill="#154060"/><rect x="30" y="30" width="80" height="120" fill="#d0b060"/><circle cx="170" cy="90" r="40" fill="#80bbcc"/></svg>')).png().toBuffer();
+ const fixtureCover=await fingerprintCover(coverBytes);
+ const coverImages={load:async(key)=>{if(key==='source:https://example.test/cover-fixture.png'||key.startsWith('poster:fixture/1/poster.jpg:'))return fixtureCover;throw new Error('Fixture cover unavailable');}};
+ if(process.env.METADATA_TEST_COVERS==='1')await prisma.video.update({where:{id:'metadata-browser-video-1'},data:{posterKey:'fixture/1/poster.jpg'}});
+ const storage={createReadUrl:async(key)=>{if(/^fixture\/[12]\/original\.webm$/.test(key))return 'http://localhost:4018/fixture.webm';if(key==='fixture/1/poster.jpg')return 'https://example.test/cover-fixture.png';throw new Error('Fixture media only');}};
+ const covers=new MetadataCoverService(prisma,storage,coverImages);
+ Module({controllers:[MetadataImportController,MetadataCoverController,CategoriesController,...(mediaServer?[VideosController]:[])],providers:[{provide:PrismaService,useValue:prisma},{provide:MetadataCoverService,useValue:covers},...(mediaServer?[{provide:StorageService,useValue:storage}]:[]),MetadataImportService,MetadataAdminGuard,AdminSessionGuard,CsrfGuard]})(LocalModule);
  const app=await NestFactory.create(LocalModule,{logger:false});app.setGlobalPrefix('api/v1');
  await app.listen(4008,'127.0.0.1');console.log('METADATA_LOCAL_API_READY http://localhost:4008 (isolated fixtures only)');
  for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{await app.close();process.exit(0);});

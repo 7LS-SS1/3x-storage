@@ -7,6 +7,9 @@ import { PrismaService } from "./prisma.service";
 import { AdminSessionGuard, CsrfGuard } from "./admin-auth.guard";
 import { MetadataAdminGuard, MetadataImportController } from "./metadata-import.controller";
 import { MetadataImportService } from "./metadata-import.service";
+import { MetadataCoverController, MetadataCoverService } from "./metadata-cover.service";
+import { fingerprintCover } from "./metadata-cover-image";
+import sharp from "sharp";
 
 // Explicitly opt in to an isolated local database; never use the project's production env.
 const db = process.env.METADATA_TEST_DATABASE_URL;
@@ -41,9 +44,12 @@ describe.skipIf(!db)("Metadata import PostgreSQL + authenticated HTTP", () => {
     for (const [token, userId] of ([[session, actor.id], [staffSession, `${prefix}-staff`]] as const)) await prisma.session.create({ data: { userId, tokenHash: createHash("sha256").update(token).digest("hex"), csrfHash: createHmac("sha256", process.env.CSRF_SECRET).update(csrf).digest("hex"), expiresAt: new Date(Date.now()+3600000), absoluteExpiresAt: new Date(Date.now()+7200000) } });
     // Vitest/esbuild does not emit TypeScript design:paramtypes. Production tsc does.
     Reflect.defineMetadata("design:paramtypes", [MetadataImportService], MetadataImportController);
+    const fixtureCover = await fingerprintCover(await sharp({ create: { width: 32, height: 32, channels: 3, background: "#306090" } }).png().toBuffer());
+    const coverService = new MetadataCoverService(prisma, { createReadUrl: async () => "https://example.test/cover.jpg" } as never, { load: async () => fixtureCover } as never);
+    Reflect.defineMetadata("design:paramtypes", [MetadataCoverService], MetadataCoverController);
     Reflect.defineMetadata("design:paramtypes", [PrismaService], AdminSessionGuard);
     Reflect.defineMetadata("design:paramtypes", [PrismaService], CsrfGuard);
-    @Module({ controllers: [MetadataImportController], providers: [{ provide: PrismaService, useValue: prisma }, { provide: MetadataImportService, useValue: service }, AdminSessionGuard, MetadataAdminGuard, CsrfGuard] }) class TestModule {}
+    @Module({ controllers: [MetadataImportController, MetadataCoverController], providers: [{ provide: PrismaService, useValue: prisma }, { provide: MetadataImportService, useValue: service }, { provide: MetadataCoverService, useValue: coverService }, AdminSessionGuard, MetadataAdminGuard, CsrfGuard] }) class TestModule {}
     app = await NestFactory.create(TestModule, { logger: false }); await app.listen(0, "127.0.0.1"); url = await app.getUrl();
   }, 30000);
   afterAll(async () => {
@@ -60,6 +66,23 @@ describe.skipIf(!db)("Metadata import PostgreSQL + authenticated HTTP", () => {
     expect((await http('/batches','GET',undefined,{cookie:`video_session=${staffSession}; video_csrf=${csrf}`})).status).toBe(403);
     expect((await http('/apply','POST',{confirm:true,items:[]},{'x-csrf-token':''})).status).toBe(403);
     expect((await http('/apply','POST',{confirm:true,items:[]},{origin:'https://wrong.example.test'})).status).toBe(403);
+  });
+  it("protects cover comparison with ADMIN and CSRF and never changes staged data or videos", async () => {
+    const { b, r } = await stage(985, { target_video_id: undefined, image_url: "https://example.test/cover.jpg" });
+    const before = await prisma.video.findUniqueOrThrow({ where: { id: video } });
+    const rowBefore = await prisma.metadataImportRow.findUniqueOrThrow({ where: { id: r.id } });
+    const path = `/batches/${b.id}/cover-scan`;
+    expect((await http(path, 'POST', { page: 1 }, { cookie: '' })).status).toBe(401);
+    expect((await http(path, 'POST', { page: 1 }, { cookie: `video_session=${staffSession}; video_csrf=${csrf}` })).status).toBe(403);
+    expect((await http(path, 'POST', { page: 1 }, { 'x-csrf-token': '' })).status).toBe(403);
+    expect((await http(path, 'POST', { page: 1 }, { origin: 'https://wrong.example.test' })).status).toBe(403);
+    const response = await http(path, 'POST', { page: 1 });
+    expect(response.status).toBe(201); expect(response.headers.get('cache-control')).toContain('no-store');
+    const result = await response.json();
+    expect(result.rows[0].source).toMatch(/^data:image\/jpeg;base64,/);
+    expect(result.scanned).toBeLessThanOrEqual(16);
+    expect(await prisma.video.findUniqueOrThrow({ where: { id: video } })).toEqual(before);
+    expect(await prisma.metadataImportRow.findUniqueOrThrow({ where: { id: r.id } })).toEqual(rowBefore);
   });
   it("requires confirmation and caps server-side apply at two", async () => {
     const items = [1,2,3].map(i=>({rowId:String(i),token:randomUUID()}));
