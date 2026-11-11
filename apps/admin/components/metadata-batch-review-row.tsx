@@ -6,7 +6,7 @@ import { apiRequest } from "@/lib/api-client";
 import styles from "./metadata-import-manager.module.css";
 import type { CoverResult } from "./metadata-cover-scan";
 
-export type Candidate = { id: string; publicId: string; title: string; evidence: string[]; cover?: { score: number; exact: boolean; thumbnail: string }; fileIdentity?: string; _count?: { files: number }; files?: { id: string; filename: string; sizeBytes: string; mimeType: string; width: number | null; height: number | null }[] };
+export type Candidate = { id: string; publicId: string; title: string; evidence: string[]; frame?: { seconds: number; panel: string }; cover?: { score: number; exact: boolean; thumbnail: string }; fileIdentity?: string; _count?: { files: number }; files?: { id: string; filename: string; sizeBytes: string; mimeType: string; width: number | null; height: number | null }[] };
 export type TextField = "title" | "description";
 export type BatchReviewRow = {
   id: string; ordinal: number; siteUrl: string | null; postId: string | null; status: string;
@@ -68,9 +68,9 @@ export function MetadataBatchReviewRow({ row, cover, disabled, prepared, onPrepa
       {candidates.map(v => <section className={styles.candidate} key={v.id} aria-label={`วิดีโอ ${v.id}`}>
         <strong>{v.title}</strong><p>Video ID: <code>{v.id}</code> • publicId: <code>{v.publicId}</code></p>
         <ul>{v.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>
-        {v.cover && cover?.source && <div className={styles.coverPair} aria-label="เปรียบเทียบภาพหน้าปก"><figure><img src={cover.source} alt="รูปปกต้นทางจากไฟล์นำเข้า" /><figcaption>ต้นทาง WordPress</figcaption></figure><figure><img src={v.cover.thumbnail} alt={`รูปปกในแอป ${v.id}`} /><figcaption>รูปปกใน 3x-storage • {v.cover.exact ? "ไฟล์รูปตรงกัน" : `ความคล้าย ${v.cover.score}/100`}</figcaption></figure></div>}
+        {v.cover && cover?.source && <div className={styles.coverPair} aria-label="เปรียบเทียบภาพหน้าปก"><figure><img src={cover.source} alt="รูปปกต้นทางจากไฟล์นำเข้า" /><figcaption>ต้นทาง WordPress</figcaption></figure><figure><img src={v.cover.thumbnail} alt={`${v.frame ? "เฟรมวิดีโอ" : "รูปปกในแอป"} ${v.id}`} /><figcaption>{v.frame ? `เฟรมวิดีโอที่ ${v.frame.seconds.toFixed(1)} วินาที • ${v.frame.panel}` : "รูปปกใน 3x-storage"} • {v.cover.exact ? "ไฟล์รูปตรงกัน" : `ความคล้าย ${v.cover.score}/100`}</figcaption></figure></div>}
         <details><summary>ข้อมูลไฟล์ในแอป</summary>{v.fileIdentity && <p>{v.fileIdentity}</p>}{v.files?.map(f => <p key={f.id}>{f.filename} • {f.mimeType} • {f.sizeBytes} bytes • {f.width && f.height ? `${f.width} × ${f.height}` : "ไม่ระบุความละเอียด"}</p>)}{(v._count?.files || 0) > (v.files?.length || 0) && <p>แสดง {v.files?.length || 0} จาก {v._count?.files} ไฟล์</p>}</details>
-        <button disabled={busy || disabled} onClick={() => void play(v)}>เล่นวิดีโอนี้เพื่อตรวจสอบ</button>
+        <button disabled={busy || disabled} onClick={() => void play(v)}>{v.frame ? `เล่นตรวจจาก ${v.frame.seconds.toFixed(1)} วินาที` : "เล่นวิดีโอนี้เพื่อตรวจสอบ"}</button>
         {target?.id === v.id && <small>กำลังตรวจวิดีโอที่เลือกนี้</small>}
       </section>)}
       <details><summary>ค้นหา Video ID / publicId เอง</summary><label>Video ID หรือ publicId<input value={lookup} disabled={disabled || busy} onChange={e => setLookup(e.target.value)} /></label><button disabled={busy || disabled || !lookup.trim()} onClick={() => void action(async () => {
@@ -80,7 +80,7 @@ export function MetadataBatchReviewRow({ row, cover, disabled, prepared, onPrepa
       })}>ค้นหา ID</button></details>
       {target && <section className={styles.videoPreview} aria-label="ตรวจเนื้อหาวิดีโอ">
         <h4>ตรวจวิดีโอ: {target.title}</h4><p>Video ID: <code>{target.id}</code></p>
-        {preview && <SecureVideoPlayer key={preview.url} source={preview.url} sourceType={preview.mimeType} poster={preview.posterUrl || undefined} title={preview.title} onEvent={event => { if (event === "playing") setPlayed(true); if (event === "error") { setPlayed(false); invalidate(); } }} />}
+        {preview && <SecureVideoPlayer key={preview.url} source={preview.url} sourceType={preview.mimeType} poster={preview.posterUrl || undefined} title={preview.title} onEvent={(event, video) => { if (event === "ready" && target.frame) video.currentTime = Math.min(target.frame.seconds, Math.max(0, video.duration - 0.1)); if (event === "playing") setPlayed(true); if (event === "error") { setPlayed(false); invalidate(); } }} />}
         <p>ลิงก์เล่นมีอายุประมาณ 5 นาที หากเล่นไม่ได้ให้เปิดใหม่หรือใช้ไฟล์สำหรับเล่น</p>
         <button disabled={busy || disabled} onClick={() => void play(target, false)}>เปิดไฟล์สำหรับเล่นแทนต้นฉบับ</button>
       </section>}

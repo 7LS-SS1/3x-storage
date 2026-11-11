@@ -83,6 +83,9 @@ CMD ["node", "server.js"]
 
 FROM runtime AS api
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build --chown=node:node /prod/api ./
 RUN dpkg --purge --force-remove-essential perl-base
 USER node

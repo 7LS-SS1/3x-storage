@@ -241,6 +241,12 @@ export class StorageService {
     );
   }
 
+  // Internal frame scanner only: the caller selects this key from Video/VideoFile.
+  async readRange(storageKey: string, range: string, signal: AbortSignal) {
+    const config = this.config();
+    return this.s3().send(new GetObjectCommand({ Bucket: config.bucket, Key: storageKey, Range: range }), { abortSignal: signal });
+  }
+
   async putObject(storageKey: string, body: Buffer, contentType: string) {
     const config = this.config();
     await this.s3().send(new PutObjectCommand({
