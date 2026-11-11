@@ -32,7 +32,8 @@ const server=http.createServer((req,res)=>{
     await page.fill('[name=post_ids]','900001,900002');
     await page.click('#wpmb-preview');await page.waitForFunction(()=>!document.querySelector('#wpmb-download').disabled);
     assert.equal(await page.locator('iframe').count(),0);
-    assert.match(await page.locator('#wpmb-preview-data').textContent(),/gallery/);
+    assert.equal(await page.locator('#wpmb-preview-data').count(),0);
+    assert.match(await page.locator('#wpmb-status').textContent(),/ตรวจครบ 2 รายการ/);
     await page.screenshot({path:path.join(artifacts,'admin-preview.png'),fullPage:true});
     await page.evaluate(()=>{window.testFiles=[];window.showDirectoryPicker=async()=>({getFileHandle:async name=>({createWritable:async()=>{const f={name,text:'',closed:false,async write(t){this.text+=t;},async close(){this.closed=true;},async abort(){this.aborted=true;}};window.testFiles.push(f);return f;}})});});
     page.on('dialog',d=>d.accept());await page.click('#wpmb-download');

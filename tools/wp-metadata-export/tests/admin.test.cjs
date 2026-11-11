@@ -20,7 +20,7 @@ function harness({failWrite=false, failBatch=false, cancelAfterBatch=false, prev
 }
 test('preview uses text, explicit review gates download, changes invalidate review',async()=>{
   const h=harness();await h.click('wpmb-download');assert.equal(h.files.length,0);
-  await h.click('wpmb-preview');assert.match(h.nodes['wpmb-preview-data'].textContent,/<iframe/);assert.equal(h.nodes['wpmb-download'].disabled,false);
+  await h.click('wpmb-preview');assert.equal(h.nodes['wpmb-preview-data'].textContent,'');assert.equal(h.nodes['wpmb-download'].disabled,false);
   h.change();assert.equal(h.nodes['wpmb-download'].disabled,true);await h.click('wpmb-download');assert.equal(h.files.length,0);
 });
 test('streamed JSON CSV report complete with failed item accounting',async()=>{
@@ -43,5 +43,12 @@ test('preview follows every batch before allowing download',async()=>{
  assert.equal(h.requests.filter(r=>r.operation==='batch').length,2);
  assert.match(h.nodes['wpmb-status'].textContent,/ตรวจครบ 6 รายการ/);
  assert.equal(h.nodes['wpmb-download'].disabled,false);
- assert.equal((h.nodes['wpmb-preview-data'].textContent.match(/content_raw/g)||[]).length,3);
+ assert.equal(h.nodes['wpmb-preview-data'].textContent,'');
+});
+
+test('large review keeps raw JSON out of the page',async()=>{
+ const h=harness({previewPages:1000});await h.click('wpmb-preview');
+ assert.match(h.nodes['wpmb-status'].textContent,/ตรวจครบ 2000 รายการ/);
+ assert.equal(h.nodes['wpmb-preview-data'].textContent,'');
+ assert.equal(h.nodes['wpmb-download'].disabled,false);
 });

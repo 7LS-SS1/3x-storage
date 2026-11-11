@@ -120,10 +120,10 @@ final class WPMB_Admin {
         <tr><th>ช่วงวันที่ (รวมวันสุดท้าย)</th><td><select name="date_basis"><option value="post_date">วันที่เผยแพร่</option><option value="post_modified">วันที่แก้ไข</option></select> <input name="date_from" type="date"> ถึง <input name="date_to" type="date"><p>เขตเวลา WordPress: <?php echo esc_html(wp_timezone_string()); ?> (วันที่ในตาราง posts ของเว็บไซต์) • เว้นช่วงวันที่ว่างเพื่อส่งออกทุกวัน</p></td></tr>
         <tr><th>ขอบเขต</th><td><label><input type="radio" name="scope" value="ids"> ระบุ Post ID</label> <input name="post_ids" placeholder="101, 102" aria-label="Post IDs"><br><label><input type="radio" name="scope" value="all" checked> บทความทั้งหมดตามตัวกรอง (ไม่ใช้ Post ID ที่กรอกค้างไว้)</label></td></tr>
         </tbody></table><button type="button" id="wpmb-preview" class="button">ตรวจสอบทั้งหมด</button> <button type="button" id="wpmb-download" class="button button-primary" disabled>ยืนยันและบันทึก JSON + CSV</button> <button type="button" id="wpmb-cancel" class="button" disabled>หยุด</button></form>
-        <p>iframe แสดงเป็นข้อความเท่านั้น ไม่ render หรือเล่นวิดีโอ ค่าหลัง /embed/ เป็นค่าที่ parse ได้ ยังไม่ใช่ Video ID ที่ยืนยันแล้ว</p>
+        <p>หน้า Export แสดงเฉพาะจำนวนและความคืบหน้า ไม่แสดง JSON หรือ iframe ทั้งหมด ค่าหลัง /embed/ เป็นค่าที่ parse ได้ ยังไม่ใช่ Video ID ที่ยืนยันแล้ว</p>
         <p>JSON เก็บต้นฉบับและทุก taxonomy ส่วน CSV เป็นสรุป ฟิลด์ที่ไม่อยู่ใน mapping จะมีเหตุผลใน excluded_meta_keys หากพบข้อมูลรับรองจะตัดฟิลด์หรือปฏิเสธรายการนั้นโดยไม่แก้ต้นฉบับ</p>
         <details><summary>Field mapping ที่ตรวจจากโค้ด RetroTube</summary><pre><?php echo esc_html(WPMB_Export::json(WPMB_Export::mapping())); ?></pre></details>
-        <p id="wpmb-status" role="status" aria-live="polite">ยังไม่ได้ตรวจสอบ</p><pre id="wpmb-preview-data" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#fff;padding:16px;max-height:600px;overflow:auto"></pre></div>
+        <p id="wpmb-status" role="status" aria-live="polite">ยังไม่ได้ตรวจสอบ</p></div>
         <?php
     }
 }
