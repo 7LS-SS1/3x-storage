@@ -96,7 +96,7 @@ final class WPMB_Admin {
             self::guard();
             $input = wp_unslash($_POST);
             if (($input['operation'] ?? '') === 'start') { $result = self::start($input); }
-            elseif (($input['operation'] ?? '') === 'preview') { $start = self::start($input); $result = $start + ['preview' => self::batch($start['cursor'], 2)]; }
+            elseif (($input['operation'] ?? '') === 'preview') { $start = self::start($input); $result = $start + ['preview' => self::batch($start['cursor'])]; }
             elseif (($input['operation'] ?? '') === 'batch') { $result = self::batch((string)($input['cursor'] ?? '')); }
             else { throw new RuntimeException('invalid_operation'); }
             wp_send_json_success($result);
@@ -113,17 +113,17 @@ final class WPMB_Admin {
         ?>
         <div class="wrap"><h1>RetroTube — Metadata Backup Export</h1>
         <p>อ่านและ export เท่านั้น • ไม่เชื่อมต่อ 3x-storage หรือ Video Core • ไม่แก้บทความ รูปภาพ หรือ iframe</p>
-        <p>เริ่มจาก Post ID 1–2 รายการ ตรวจตัวอย่าง แล้วจึง export ทั้งหมด ใช้ Chrome/Edge ผ่าน HTTPS หรือ localhost เพื่อเขียนไฟล์ลงเครื่องเป็น batch โดยไม่เก็บไฟล์บนเว็บเซิร์ฟเวอร์</p>
+        <p>ตรวจทุกรายการตามตัวกรองเป็น batch แล้วจึงยืนยัน export ทั้งหมด ใช้ Chrome/Edge ผ่าน HTTPS หรือ localhost เพื่อเขียนไฟล์ลงเครื่องเป็น batch โดยไม่เก็บไฟล์บนเว็บเซิร์ฟเวอร์</p>
         <form id="wpmb-form"><table class="form-table"><tbody>
         <tr><th>Post type</th><td><select name="post_type"><?php foreach (get_post_types(['show_ui'=>true]) as $type) { if ($type === 'attachment') { continue; } echo '<option '.selected($type, 'post', false).' value="'.esc_attr($type).'">'.esc_html($type).'</option>'; } ?></select></td></tr>
         <tr><th>สถานะ</th><td><select name="post_status"><option value="all">ทุกสถานะ (รวมร่าง ส่วนตัว ถังขยะ และร่างอัตโนมัติ)</option><?php foreach (get_post_stati() as $status) { echo '<option value="'.esc_attr($status).'">'.esc_html($status).'</option>'; } ?></select></td></tr>
         <tr><th>ช่วงวันที่ (รวมวันสุดท้าย)</th><td><select name="date_basis"><option value="post_date">วันที่เผยแพร่</option><option value="post_modified">วันที่แก้ไข</option></select> <input name="date_from" type="date"> ถึง <input name="date_to" type="date"><p>เขตเวลา WordPress: <?php echo esc_html(wp_timezone_string()); ?> (วันที่ในตาราง posts ของเว็บไซต์) • เว้นช่วงวันที่ว่างเพื่อส่งออกทุกวัน</p></td></tr>
         <tr><th>ขอบเขต</th><td><label><input type="radio" name="scope" value="ids"> ระบุ Post ID</label> <input name="post_ids" placeholder="101, 102" aria-label="Post IDs"><br><label><input type="radio" name="scope" value="all" checked> บทความทั้งหมดตามตัวกรอง (ไม่ใช้ Post ID ที่กรอกค้างไว้)</label></td></tr>
-        </tbody></table><button type="button" id="wpmb-preview" class="button">ตรวจตัวอย่าง 1–2 รายการ</button> <button type="button" id="wpmb-download" class="button button-primary" disabled>ยืนยันและบันทึก JSON + CSV</button> <button type="button" id="wpmb-cancel" class="button" disabled>หยุด</button></form>
+        </tbody></table><button type="button" id="wpmb-preview" class="button">ตรวจสอบทั้งหมด</button> <button type="button" id="wpmb-download" class="button button-primary" disabled>ยืนยันและบันทึก JSON + CSV</button> <button type="button" id="wpmb-cancel" class="button" disabled>หยุด</button></form>
         <p>iframe แสดงเป็นข้อความเท่านั้น ไม่ render หรือเล่นวิดีโอ ค่าหลัง /embed/ เป็นค่าที่ parse ได้ ยังไม่ใช่ Video ID ที่ยืนยันแล้ว</p>
         <p>JSON เก็บต้นฉบับและทุก taxonomy ส่วน CSV เป็นสรุป ฟิลด์ที่ไม่อยู่ใน mapping จะมีเหตุผลใน excluded_meta_keys หากพบข้อมูลรับรองจะตัดฟิลด์หรือปฏิเสธรายการนั้นโดยไม่แก้ต้นฉบับ</p>
         <details><summary>Field mapping ที่ตรวจจากโค้ด RetroTube</summary><pre><?php echo esc_html(WPMB_Export::json(WPMB_Export::mapping())); ?></pre></details>
-        <p id="wpmb-status" role="status" aria-live="polite">ยังไม่ได้ตรวจตัวอย่าง</p><pre id="wpmb-preview-data" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#fff;padding:16px;max-height:600px;overflow:auto"></pre></div>
+        <p id="wpmb-status" role="status" aria-live="polite">ยังไม่ได้ตรวจสอบ</p><pre id="wpmb-preview-data" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#fff;padding:16px;max-height:600px;overflow:auto"></pre></div>
         <?php
     }
 }

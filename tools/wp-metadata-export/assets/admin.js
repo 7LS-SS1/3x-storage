@@ -36,12 +36,23 @@
   form.addEventListener('input', () => { reviewed = null; download.disabled = true; });
   preview.addEventListener('click', async () => {
     if (running) return;
-    const current = fingerprint(); frozen = fields(); busy(true);
+    const current = fingerprint(); frozen = fields(); stopped = false; reviewed = null; busy(true);
     try {
       const data = await startRequest('preview');
-      output.textContent = JSON.stringify({ filters: data.header.filters, expected_records: data.expected_records, skipped: data.skipped, ...data.preview }, (key, val) => key === 'cursor' || key === 'csv' ? undefined : val, 2);
+      output.textContent = JSON.stringify({ filters: data.header.filters, expected_records: data.expected_records, skipped: data.skipped }, null, 2) + '\n';
+      let batch = data.preview, count = 0, failed = 0;
+      while (true) {
+        if (stopped) throw new Error('ผู้ใช้หยุดการตรวจ — ยังตรวจไม่ครบ');
+        // Append one text node per batch; never render source HTML or rebuild prior batches.
+        output.append(document.createTextNode(JSON.stringify({ records: batch.records, failed: batch.failed }, null, 2) + '\n'));
+        count += batch.records.length; failed += batch.failed.length;
+        status.textContent = `ตรวจแล้ว ${count + failed}/${data.expected_records} • สำเร็จ ${count} • ล้มเหลว ${failed}`;
+        if (batch.done) break;
+        batch = await request('batch', { cursor: batch.cursor });
+      }
+      if (count + failed !== data.expected_records) throw new Error('จำนวนรายการเปลี่ยนระหว่างตรวจ กรุณาตรวจใหม่');
       reviewed = current;
-      status.textContent = `พบ ${data.expected_records} รายการ • ตัวอย่างสำเร็จ ${data.preview.records.length} • ข้าม ${data.skipped.length} • ล้มเหลว ${data.preview.failed.length} — ตรวจต้นฉบับและรายการฟิลด์ที่ตัดออกก่อนบันทึก`;
+      status.textContent = `ตรวจครบ ${data.expected_records} รายการ • สำเร็จ ${count} • ข้าม ${data.skipped.length} • ล้มเหลว ${failed} — ตรวจต้นฉบับและรายการฟิลด์ที่ตัดออกก่อนบันทึก`;
     } catch (e) { reviewed = null; status.textContent = `ตรวจไม่สำเร็จ: ${e.message}`; }
     finally { busy(false); }
   });

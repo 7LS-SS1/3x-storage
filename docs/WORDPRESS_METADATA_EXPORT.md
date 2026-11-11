@@ -1,3 +1,9 @@
+# Release 1.1.1 — 2026-11-12
+
+Export review now checks every matching record in sequential 50-record batches, showing all raw records as text with running counts. Download unlocks only after completing every batch and reconciling successful + failed with the expected count. Stop or request failure leaves approval disabled. Existing explicit download confirmation and embed-import confirmation remain.
+
+Validation: six UI tests pass, including a three-batch preview; PHP lint passes. Production installation not performed. Browser retains the full review text, so large reviews consume browser memory; server batches remain bounded. Download is a fresh read, not the same database snapshot as review. No migration or media/data writes introduced by review; rollback is reinstalling 1.1.0.
+
 # Release 1.1.0 — 2026-11-12
 
 User expanded scope: export all matching WordPress posts and import the CSV exported by 3x-storage to update RetroTube embed by exact title.
