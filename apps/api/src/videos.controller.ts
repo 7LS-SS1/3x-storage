@@ -568,7 +568,7 @@ export class VideosController {
   }
 
   @Post(":id/admin-preview-token")
-  async preview(@Param("id") id: string) {
+  async preview(@Param("id") id: string, @Query("source") source?: string) {
     const video = await this.prisma.video.findFirst({
       where: {
         id,
@@ -582,7 +582,7 @@ export class VideosController {
         posterKey: true,
         files: {
           where: { role: { in: ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"] } },
-          orderBy: { createdAt: "desc" },
+          orderBy: source === "original" ? [{ role: "asc" }, { createdAt: "desc" }] : { createdAt: "desc" },
           select: { id: true, role: true, storageKey: true, mimeType: true },
           take: 5
         }
@@ -590,6 +590,7 @@ export class VideosController {
     });
     if (!video) throw new NotFoundException("ไม่พบวิดีโอ");
     const file =
+      (source === "original" ? video.files.find(item => item.role === "ORIGINAL") : undefined) ||
       video.files.find(item => item.role === "HLS_MANIFEST") ||
       video.files.find(item => item.role === "PLAYBACK") ||
       video.files.find(item => item.role === "ORIGINAL");

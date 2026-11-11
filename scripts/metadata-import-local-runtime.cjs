@@ -11,6 +11,8 @@ const {MetadataImportService}=require('../apps/api/dist/metadata-import.service'
 const {MetadataImportController,MetadataAdminGuard}=require('../apps/api/dist/metadata-import.controller');
 const {AdminSessionGuard,CsrfGuard}=require('../apps/api/dist/admin-auth.guard');
 const {CategoriesController}=require('../apps/api/dist/categories.controller');
+const {VideosController}=require('../apps/api/dist/videos.controller');
+const {StorageService}=require('../apps/api/dist/storage.service');
 const argon2=apiRequire('argon2');
 async function main(){
  const db=new URL(process.env.LOCAL_DATABASE_URL||'');
@@ -19,8 +21,19 @@ async function main(){
  const hash=await argon2.hash('Local-Metadata-Test-2026!');
  for(const [suffix,role] of [['admin','ADMIN'],['staff','STAFF']])await prisma.user.upsert({where:{id:`metadata-browser-${suffix}`},create:{id:`metadata-browser-${suffix}`,email:`metadata-${suffix}@example.test`,name:`Metadata ${suffix}`,role,passwordHash:hash},update:{passwordHash:hash,failedLoginCount:0,lockedUntil:null}});
  for(const n of [1,2])await prisma.video.upsert({where:{id:`metadata-browser-video-${n}`},create:{id:`metadata-browser-video-${n}`,publicId:`metadata-browser-public-${n}`,title:`วิดีโอทดลองเดิม ${n}`,description:'คำอธิบายเดิม',status:'READY',uploadedById:'metadata-browser-admin',originalKey:`fixture/${n}/original.mp4`,posterKey:`fixture/${n}/poster.jpg`},update:{}});
+ let mediaServer;
+ if(process.env.METADATA_TEST_MEDIA_FILE){
+  const bytes=require('node:fs').readFileSync(process.env.METADATA_TEST_MEDIA_FILE);
+  mediaServer=require('node:http').createServer((req,res)=>{if(req.url!=='/fixture.webm'){res.writeHead(404);res.end();return;}res.writeHead(200,{'Content-Type':'video/webm','Content-Length':bytes.length,'Access-Control-Allow-Origin':'http://localhost:3008'});res.end(bytes);});
+  await new Promise(resolve=>mediaServer.listen(4018,'127.0.0.1',resolve));
+  for(const n of [1,2]){
+   await prisma.video.update({where:{id:`metadata-browser-video-${n}`},data:{posterKey:null}});
+   const data={videoId:`metadata-browser-video-${n}`,role:'ORIGINAL',storageKey:`fixture/${n}/original.webm`,filename:'fixture.webm',extension:'webm',mimeType:'video/webm',sizeBytes:BigInt(bytes.length),width:320,height:180};
+   await prisma.videoFile.upsert({where:{id:`metadata-browser-file-${n}`},create:{id:`metadata-browser-file-${n}`,...data},update:data});
+  }
+ }
  class LocalModule{};
- Module({controllers:[MetadataImportController,CategoriesController],providers:[{provide:PrismaService,useValue:prisma},MetadataImportService,MetadataAdminGuard,AdminSessionGuard,CsrfGuard]})(LocalModule);
+ Module({controllers:[MetadataImportController,CategoriesController,...(mediaServer?[VideosController]:[])],providers:[{provide:PrismaService,useValue:prisma},...(mediaServer?[{provide:StorageService,useValue:{createReadUrl:async(key)=>{if(!/^fixture\/[12]\/original\.webm$/.test(key))throw new Error('Fixture media only');return 'http://localhost:4018/fixture.webm';}}}]:[]),MetadataImportService,MetadataAdminGuard,AdminSessionGuard,CsrfGuard]})(LocalModule);
  const app=await NestFactory.create(LocalModule,{logger:false});app.setGlobalPrefix('api/v1');
  await app.listen(4008,'127.0.0.1');console.log('METADATA_LOCAL_API_READY http://localhost:4008 (isolated fixtures only)');
  for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{await app.close();process.exit(0);});

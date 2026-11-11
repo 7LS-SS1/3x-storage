@@ -1,0 +1,36 @@
+{
+  "date": "2026-11-12",
+  "feature": "Automatic metadata video discovery and in-app original video inspection",
+  "api_tests": 68,
+  "typecheck": {
+    "api": "passed",
+    "admin": "passed"
+  },
+  "browser": {
+    "passed": true,
+    "actual": [
+      "Next login/session/CSRF",
+      "Nest discovery API",
+      "PostgreSQL queries",
+      "two candidates and explicit target selection",
+      "local generated WebM playback",
+      "confirmation gate",
+      "desktop 1440 and mobile 390",
+      "no page errors",
+      "no horizontal page overflow"
+    ],
+    "test_double": "StorageService returns a local fixture media URL; no production R2"
+  },
+  "schema_changes": false,
+  "production": {
+    "deployed": false,
+    "real_storage_playback_verified": false,
+    "wordpress_data_verified": false
+  },
+  "limitations": [
+    "Exact IDs and filenames are evidence for review, not automatic binding",
+    "No byte or checksum comparison with WordPress source",
+    "No external source URL fetching",
+    "Candidate and file lists are bounded and truncation reported"
+  ]
+}

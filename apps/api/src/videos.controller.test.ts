@@ -204,6 +204,17 @@ describe("VideosController poster URLs", () => {
 });
 
 describe("VideosController export", () => {
+  it("prefers the stored original for metadata inspection while keeping default HLS preview", async () => {
+    const createReadUrl = vi.fn(async (key: string) => `https://media.example.test/${key}`);
+    const prisma = { video: { findFirst: vi.fn().mockResolvedValue({ id: "v", publicId: "p", title: "Fixture", posterKey: null, files: [
+      { id: "hls", role: "HLS_MANIFEST", storageKey: "playlist.m3u8", mimeType: "application/vnd.apple.mpegurl" },
+      { id: "original", role: "ORIGINAL", storageKey: "original.mp4", mimeType: "video/mp4" }
+    ] }) } } as unknown as PrismaService;
+    const controller = new VideosController(prisma, { createReadUrl } as unknown as StorageService);
+    expect((await controller.preview("v", "original")).preview.url).toContain("original.mp4");
+    expect((await controller.preview("v")).preview.url).toContain("playlist.m3u8");
+    expect(createReadUrl).toHaveBeenCalledWith("original.mp4", 300);
+  });
   it("returns every requested video with its public embed URL", async () => {
     const previousPlayerUrl = process.env.PLAYER_URL;
     const previousMediaUrl = process.env.MEDIA_URL;

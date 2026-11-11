@@ -130,6 +130,29 @@ describe.skipIf(!db)("Metadata import PostgreSQL + authenticated HTTP", () => {
     const fresh=await service.preview(actor,r.id,{targetVideoId:video2,fields:['categoryId'],values:{categoryId:`${prefix}-cat`}});await service.applyOne(actor,r.id,fresh.token);
     expect((await prisma.video.findUniqueOrThrow({where:{id:video2}})).categoryId).toBe(`${prefix}-cat`);
   });
+  it("discovers exact embed and file candidates without binding, fetching URLs or changing videos", async () => {
+    const before = await prisma.video.findUniqueOrThrow({ where: { id: video2 } });
+    const name = `${prefix}-same.mp4`;
+    for (const id of [video, video2]) await prisma.videoFile.create({ data: { id: `${id}-discovery-file`, videoId: id, role: "ORIGINAL", filename: name, storageKey: `${id}/discovery.mp4`, mimeType: "video/mp4", extension: "mp4", sizeBytes: 123456789012345n, width: 1920, height: 1080 } });
+    const batch = await service.stage(actor, { originalname: "discovery.json", buffer: Buffer.from(JSON.stringify([input(90, { iframe_sources: [{ src_raw: `https://foreign.example.test/embed/${video2}-public`, parsed_embed_id: "wrong" }], video_urls: [{ source_field: "video_url", value: `https://media.example.test/${name}` }] })])) });
+    const row = (await service.batch(batch.id, 1)).rows[0]!;
+    const response = await http(`/rows/${row.id}/candidates`);
+    expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toContain("no-store");
+    const result = await response.json(); expect(result.candidates).toHaveLength(2);
+    const candidate = result.candidates.find((c: { id: string }) => c.id === video2);
+    expect(candidate.evidence.join(" ")).toContain("origin ยังไม่ยืนยัน");
+    expect(candidate.files[0].sizeBytes).toBe("123456789012345");
+    expect(JSON.stringify(result)).not.toContain("storageKey");
+    expect((await prisma.metadataImportRow.findUniqueOrThrow({ where: { id: row.id } })).previewToken).toBeNull();
+    expect(await prisma.video.findUniqueOrThrow({ where: { id: video2 } })).toEqual(before);
+    expect((await http(`/rows/${row.id}/candidates`, "GET", undefined, { cookie: "" })).status).toBe(401);
+    expect((await http(`/rows/${row.id}/candidates`, "GET", undefined, { cookie: `video_session=${staffSession}` })).status).toBe(403);
+    await prisma.video.update({ where: { id: video2 }, data: { deletedAt: new Date() } });
+    expect((await service.candidates(row.id)).candidates.map(c => c.id)).toEqual([video]);
+    await prisma.video.update({ where: { id: video2 }, data: { deletedAt: null } });
+    const empty = await service.stage(actor, { originalname: "no-references.json", buffer: Buffer.from(JSON.stringify([input(91, { title: before.title, filename: name, parsed_embed_id: before.publicId })])) });
+    expect((await service.candidates((await service.batch(empty.id, 1)).rows[0]!.id)).candidates).toEqual([]);
+  });
   it("undoes two successive changes in reverse order without overwriting journal snapshots",async()=>{
     const original=await prisma.video.findUniqueOrThrow({where:{id:video2}});
     const a=await stage(60,{title:'รุ่น A'},video2);const appliedA=await service.applyOne(actor,a.r.id,a.p.token);

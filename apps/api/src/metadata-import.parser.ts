@@ -109,7 +109,7 @@ function normalize(raw: unknown, siteFallback?: unknown): ParsedMetadataRow {
   }
   result.warnings.push("App รองรับหมวดหมู่เดียว: เลือกหมวดหมู่ปลายทางเอง; หลายหมวดหมู่ แท็ก และ taxonomy อื่นเก็บครบในข้อมูลต้นทาง ไม่สร้างอัตโนมัติ");
   result.warnings.push("image_url เก็บเป็น metadata เท่านั้น ไม่เปลี่ยนปก R2, storage key หรือ iframe");
-  if (!n.targetVideoId) result.warnings.push("ยังไม่ระบุ target_video_id: ต้องเลือก Video ID เอง ไม่มีการจับคู่จากชื่อหรือ parsed_embed_id");
+  if (!n.targetVideoId) result.warnings.push("ยังไม่ระบุ target_video_id: ระบบค้นหาตัวเลือกจาก URL embed/ไฟล์ให้ แต่ต้องตรวจและเลือกคู่ก่อนบันทึก ไม่จับคู่จากชื่อคล้ายกัน");
   return result;
 }
 

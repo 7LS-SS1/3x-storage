@@ -117,3 +117,17 @@ Browser harness: `scripts/metadata-import-local-runtime.cjs` เปิด API �
 7. หากพบปัญหา หยุดการนำเข้าและ rollback แอปเป็น version เดิม โดยเก็บตารางใหม่ไว้เพื่อไม่เสีย raw source/audit หากต้องคืน metadata ให้ใช้ change rollback ที่ตรวจ conflict ก่อน การลบตาราง/restore backup ทั้งฐานไม่ใช่ขั้นตอน rollback ปกติและอาจทับงานใหม่
 
 ข้อจำกัดคงเหลือ: ยังไม่ได้ตรวจข้อมูล WordPress จริงหรือ migration บน production, ยังไม่ทดสอบไฟล์ 500 records ขนาดเต็มบนโครงสร้าง production, schema ยังเก็บหนึ่งหมวดหมู่และไม่เผยแพร่ tags เป็น relation, URL รูป metadata ไม่แทนปก player และไม่มี importer สำหรับไฟล์ media หรือการแก้ iframe
+
+## ค้นหาคู่อัตโนมัติและตรวจไฟล์ใน App
+
+เมื่อเปิดรายการ ระบบอ่าน URL จาก `iframe_sources` ของ JSON หรือ `iframe_src` ของ CSV แล้วค้นหา `Video.publicId` แบบตรงกัน แสดง origin ว่าตรงกับ APP_URL/PLAYER_URL ที่ตั้งไว้หรือยังไม่ยืนยัน ไม่เชื่อ `parsed_embed_id` ที่ส่งมาเดี่ยว ๆ และไม่เปิด iframe ต้นทาง
+
+ค้นหาชื่อไฟล์แบบตรงกันจาก `video_urls`, `video_url` หรือ `video_filename` เทียบกับ Video.originalFilename/VideoFile สำหรับไฟล์วิดีโอ คอลัมน์ `filename` และ `original_filename` ของ WordPress exporter เป็นชื่อรูป จึงไม่ใช้ค้นหาวิดีโอ ไม่ค้นหาจากชื่อเรื่องคล้ายกัน หากเจอหลายคู่ต้องเลือกเอง ระบบไม่เขียน mapping จากผลค้นหา
+
+แสดงข้อมูลไฟล์ที่มีในฐานข้อมูล ได้แก่ชื่อ MIME บทบาท ขนาด bytes ความละเอียดและความยาว ปุ่มเปิดวิดีโอใช้ endpoint admin-preview-token เดิมผ่าน session/CSRF โดยขอ source=original เพื่อให้ไฟล์ ORIGINAL มาก่อน หากไม่มีจึงใช้ไฟล์ที่เล่นได้ตามลำดับเดิม ลิงก์มีอายุ 5 นาที และใช้ SecureVideoPlayer ที่รองรับไฟล์ปกติ/HLS การเล่นใช้สิทธิ์ผู้ดูแลเดิม ไม่เปลี่ยนสิทธิ์ public หรือ iframe
+
+ID หรือชื่อไฟล์ตรงกันไม่ใช่การยืนยันว่าเนื้อไฟล์เหมือนกันทุก byte ยังไม่มี checksum ต้นทางที่มีชนิดอัลกอริทึมยืนยันได้ ระบบจึงแสดงว่ายังไม่เทียบเนื้อไฟล์ ให้ตรวจภาพ/วิดีโอก่อนเลือกคู่ ไม่มีการดาวน์โหลดไฟล์จาก URL ต้นทางหรือทำ server-side fetch เพื่อค้นหา
+
+จำกัด 64 references, 20 candidates และ 50 file rows ต่อ candidate พร้อมแจ้งจำนวนที่ถูกจำกัด Endpoint candidates เป็น read-only ภายใต้ ADMIN/SYSTEM และ private no-store เดิม การบันทึกยังต้อง preview และยืนยัน 1–2 รายการ ไม่เพิ่ม schema/migration และไม่เปลี่ยนงาน queue/storage lifecycle
+
+การทดสอบเพิ่มเติม: `node scripts/metadata-import-discovery-browser-test.cjs` (ต้อง compile API และเปิดฐานจำลองก่อน) ทดสอบ Next/Nest/PostgreSQL จริงพร้อม generic video ที่สร้างในเครื่อง ส่วน storage URL ใช้ test double ใน localhost เท่านั้น ไม่มีการทดสอบ R2/production หรือ WordPress จริง

@@ -39,6 +39,7 @@ export class MetadataImportController {
   @Get("batches") async batches() { return { batches: await this.service.batches() }; }
   @Get("batches/:id") async batch(@Param("id") id: string, @Query("page") page?: string) { return this.service.batch(id, pageNumber(page)); }
   @Get("rows/:id") async row(@Param("id") id: string) { return this.service.detail(id); }
+  @Get("rows/:id/candidates") async candidates(@Param("id") id: string) { return this.service.candidates(id); }
   @Get("targets") async targets(@Query("id") id: string) { if (!id?.trim() || id.length > 128) throw new BadRequestException("กรอก Video ID หรือ publicId ที่ต้องการค้นหา"); return { videos: await this.service.targets(id.trim()) }; }
   @Post("rows/:id/preview")
   @UseInterceptors(NoFilesInterceptor({ limits: { fieldSize: 1024 * 1024, fields: 1 } }))

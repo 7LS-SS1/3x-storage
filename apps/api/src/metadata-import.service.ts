@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { PrismaService } from "./prisma.service";
 import { metadataHash, parseMetadataFile, type NormalizedMetadata } from "./metadata-import.parser";
+import { metadataReferences } from "./metadata-import-matching";
 
 const fields = ["title", "description", "categoryId", "imageUrl"] as const;
 type Field = typeof fields[number];
@@ -51,6 +52,34 @@ export class MetadataImportService {
   async targets(id: string) {
     // Exact ID/publicId lookup only. Never fuzzy title matching.
     return this.prisma.video.findMany({ where: { OR: [{ id }, { publicId: id }], deletedAt: null, status: { notIn: ["DELETING", "DELETED"] } }, select: { id: true, publicId: true, title: true, description: true, categoryId: true }, take: 2 });
+  }
+  async candidates(rowId: string) {
+    const { row, existingMapping } = await this.detail(rowId);
+    const raw = row.rawJson as { record?: unknown };
+    const result = metadataReferences(raw?.record, row.siteUrl, [process.env.APP_URL, process.env.PLAYER_URL, process.env.LOCAL_APP_URL, process.env.LOCAL_PLAYER_URL].filter((v): v is string => !!v));
+    const ids = result.references.filter(r => r.kind === "videoId").map(r => r.value);
+    if (existingMapping) ids.push(existingMapping);
+    const publicIds = result.references.filter(r => r.kind === "publicId").map(r => r.value);
+    const names = result.references.filter(r => r.kind === "filename").map(r => r.value);
+    if (!ids.length && !publicIds.length && !names.length) return { ...result, candidates: [], truncated: false };
+    const videos = await this.prisma.video.findMany({
+      where: { deletedAt: null, status: { notIn: ["DELETING", "DELETED"] }, OR: [{ id: { in: ids } }, { publicId: { in: publicIds } }, { originalFilename: { in: names } }, { files: { some: { filename: { in: names }, role: { in: ["ORIGINAL", "PLAYBACK", "HLS_MANIFEST"] } } } }] },
+      select: { id: true, publicId: true, title: true, status: true, originalFilename: true, durationSeconds: true, _count: { select: { files: true } }, files: { orderBy: { id: "asc" }, take: 50, select: { id: true, filename: true, role: true, sizeBytes: true, mimeType: true, width: true, height: true } } },
+      orderBy: { id: "asc" }, take: 21
+    });
+    return { ...result, truncated: videos.length > 20, candidates: videos.slice(0, 20).map(v => ({
+      ...v, files: v.files.map(f => ({ ...f, sizeBytes: f.sizeBytes.toString() })),
+      evidence: [
+        ...(existingMapping === v.id ? ["คีย์เว็บไซต์ + Post ID เคยยืนยันคู่กับวิดีโอนี้"] : []),
+        ...result.references.flatMap(r => {
+          if (r.kind === "videoId" && r.value === v.id) return ["target_video_id ตรงกับ Video ID ในแอป"];
+          if (r.kind === "publicId" && r.value === v.publicId) return [`publicId ตรงกับ URL embed (${r.origin}) — ${r.trustedOrigin ? "origin ตรงกับการตั้งค่าแอป" : "origin ยังไม่ยืนยันว่าเป็นแอปนี้"}`];
+          if (r.kind === "filename" && (v.originalFilename === r.value || v.files.some(f => ["ORIGINAL", "PLAYBACK", "HLS_MANIFEST"].includes(f.role) && f.filename === r.value))) return [`ชื่อไฟล์ตรงกัน: ${r.value} (${r.source}) — ยังไม่ยืนยันเนื้อไฟล์`];
+          return [];
+        })
+      ],
+      fileIdentity: "ยังไม่ได้เทียบเนื้อไฟล์หรือ checksum กับต้นทาง เปิดวิดีโอตรวจและเลือกคู่ก่อนบันทึก"
+    })) };
   }
   private assertPending(row: MetadataImportRow | null): asserts row is MetadataImportRow {
     if (!row) throw new NotFoundException("ไม่พบรายการ");
