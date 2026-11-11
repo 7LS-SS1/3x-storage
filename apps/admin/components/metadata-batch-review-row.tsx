@@ -45,7 +45,7 @@ export function MetadataBatchReviewRow({ row, cover, disabled, prepared, onPrepa
     });
   }
   return <article className={styles.reviewRow} aria-label={`ตรวจบทความ ${row.postId}`}>
-    <h3>รายการ {row.ordinal} • Post ID {row.postId} — {statuses[row.status] || row.status}</h3>
+    <h3>รายการ {row.ordinal} • Post ID {row.postId} — {statuses[cover?.autoStatus || row.status] || row.status}</h3>
     <p>{row.siteUrl}</p>
     <div className={styles.sourceText}>
       <h4>ชื่อเรื่องจากไฟล์</h4><pre>{n.title?.trim() ? n.title : "ไม่มีชื่อเรื่อง — คงค่าเดิมในแอป"}</pre>
@@ -54,7 +54,9 @@ export function MetadataBatchReviewRow({ row, cover, disabled, prepared, onPrepa
     </div>
     {row.errorsJson.map((e, i) => <p className={styles.error} key={i}>{e}</p>)}
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    {row.status === "PENDING" && <>
+    {cover?.autoStatus && <p>บันทึกชื่อเรื่อง/คำอธิบายอัตโนมัติจากไฟล์ เพราะรูปปกตรงกันทุก byte — ย้อนคืนได้ในประวัติ</p>}
+    {cover?.autoError && <p role="alert" className={styles.error}>ยังไม่ได้บันทึกอัตโนมัติ: {cover.autoError}</p>}
+    {row.status === "PENDING" && !cover?.autoStatus && <>
       <h4>รายการวิดีโอที่พบใน 3x-storage ({candidates.length})</h4>
       {cover?.error && <p className={styles.note}>เปรียบเทียบรูปต้นทางไม่ได้: {cover.error}</p>}
       {cover?.source && !cover.candidates.length && <figure className={styles.coverSource}><img src={cover.source} alt="รูปปกต้นทางจากไฟล์นำเข้า" /><figcaption>รูปปกต้นทาง — ยังไม่พบภาพใกล้เคียงในส่วนที่ตรวจแล้ว</figcaption></figure>}

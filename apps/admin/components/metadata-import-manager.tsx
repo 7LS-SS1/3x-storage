@@ -40,7 +40,7 @@ export function MetadataImportManager() {
       const r = await apiRequest<{ batch: Batch }>("/metadata-import/batches", { method: "POST", body: form });
       setPlans([]); setConfirm(false); setBatch(r.batch); setTotal(r.batch._count?.rows || 0);
       await loadBatches(); await loadBatch(r.batch.id);
-      setNotice("ค้นหาคู่ให้แล้ว เล่นวิดีโอเพื่อตรวจเนื้อหา จากนั้นตรวจค่าก่อน–หลังและอนุมัติชื่อเรื่อง/คำอธิบาย ยังไม่มีข้อมูลวิดีโอถูกเปลี่ยน");
+      setNotice("กำลังตรวจรูปปก เมื่อพบรูปตรงกันทุก byte เพียงคู่เดียว ระบบจะอัปเดตชื่อเรื่อง/คำอธิบายอัตโนมัติหลังตรวจครบคลัง");
     });
   }
   async function prepare(rowId: string, targetVideoId: string, fields: TextField[]) {
@@ -66,13 +66,13 @@ export function MetadataImportManager() {
     return <div className={styles.tableScroll}><table className={styles.comparison}><thead><tr><th>ฟิลด์</th><th>ข้อมูลปัจจุบัน / ก่อนแก้</th><th>ข้อมูลจากไฟล์ / หลังแก้</th></tr></thead><tbody>{displayed.map(f => <tr key={f} className={changed.includes(f) ? styles.changed : ""}><th>{labels[f]}{changed.includes(f) && <small>เปลี่ยน</small>}</th><td><pre>{show(before[f])}</pre></td><td><pre>{show(after[f])}</pre></td></tr>)}</tbody></table></div>;
   }
   return <section className={styles.root}>
-    <header><p className={styles.eyebrow}>WORDPRESS → 3X STORAGE</p><h1>นำเข้าและตรวจสอบ Metadata</h1><p>อัปโหลด batch → ดูคู่ที่พบ → เล่นตรวจเนื้อหา → อนุมัติชื่อเรื่องและคำอธิบายจากไฟล์</p></header>
-    <div className={styles.note}>ขั้นตอนนี้อัปเดตเฉพาะชื่อเรื่องและคำอธิบายที่คุณอนุมัติ ค่าว่างคงข้อมูลเดิม ไม่มีการเปลี่ยน Video ID, เจ้าของ, ไฟล์ R2, iframe หรือสิทธิ์สื่อ</div>
+    <header><p className={styles.eyebrow}>WORDPRESS → 3X STORAGE</p><h1>นำเข้าและตรวจสอบ Metadata</h1><p>อัปโหลด batch → ตรวจรูปครบคลัง → รูปตรงกันทุก byte และคู่ไม่ซ้ำ: บันทึกชื่อเรื่อง/คำอธิบายอัตโนมัติ</p></header>
+    <div className={styles.note}>ระบบอัปเดตชื่อเรื่องและคำอธิบายอัตโนมัติสำหรับรูปปกที่ตรงกันทุก byte และพบคู่เดียว รายการอื่นยังต้องตรวจและอนุมัติ ค่าว่างคงข้อมูลเดิม ไม่มีการเปลี่ยน Video ID, เจ้าของ, ไฟล์ R2, iframe หรือสิทธิ์สื่อ</div>
     {error && <p role="alert" className={styles.error}>{error}</p>}{notice && <pre role="status" className={styles.notice}>{notice}</pre>}
     <section className={styles.card}><h2>1. อัปโหลด Batch</h2><p>JSON/CSV UTF-8 สูงสุด 10 MiB / 500 รายการ แนะนำ JSON เพื่อให้ได้คำอธิบายครบถ้วน</p><div className={styles.controls}><input aria-label="ไฟล์ metadata" type="file" accept=".json,.csv" disabled={busy} onChange={e => { setFile(e.target.files?.[0] || null); setError(""); }} /><button disabled={busy || !file} onClick={() => void upload()}>อัปโหลดและค้นหาคู่</button></div>
       <label>เปิด batch เดิม<select aria-label="เลือก batch" disabled={busy} value={batch?.id || ""} onChange={e => { if (e.target.value) void action(async () => { setPlans([]); setConfirm(false); await loadBatch(e.target.value); }); }}><option value="">เลือก batch</option>{batches.map(b => <option key={b.id} value={b.id}>{b.filename} — {date(b.createdAt)} — {b.id}</option>)}</select></label>
     </section>
-    {batch && <section className={styles.card} aria-label="รายการตรวจสอบ batch"><h2>2. เล่นตรวจรายการที่พบคู่</h2><p>Batch ID: <code>{batch.id}</code> • ทั้งหมด {total} บทความ</p><p>แสดงหน้าละ 25 บทความ ค้นหาคู่อัตโนมัติทุกครั้งที่เปิดหน้า อนุมัติครั้งละ 1–2 รายการ</p>
+    {batch && <section className={styles.card} aria-label="รายการตรวจสอบ batch"><h2>2. ผลการจับคู่และอัปเดตข้อมูล</h2><p>Batch ID: <code>{batch.id}</code> • ทั้งหมด {total} บทความ</p><p>แสดงหน้าละ 25 บทความ ตรวจและบันทึกคู่รูปตรงกันอัตโนมัติสำหรับหน้าที่เปิด ทีละรายการพร้อมประวัติย้อนคืน</p>
       {busy && !rows.length && <p role="status">กำลังค้นหาวิดีโอในแอปสำหรับหน้านี้…</p>}
       {!!rows.length && <section className={styles.note} aria-label="สถานะเปรียบเทียบรูป"><strong>ค้นหาจากภาพหน้าปกจริง</strong><p role="status">{coverScan.state.running ? "กำลังเทียบภาพ" : coverScan.state.done ? "เทียบภาพเสร็จแล้ว" : "การเทียบภาพยังไม่ครบ"} • ตรวจ {coverScan.state.scanned}/{coverScan.state.total} วิดีโอ • เทียบได้ {coverScan.state.compared} • ไม่มีปก {coverScan.state.missing} • อ่านปกไม่ได้ {coverScan.state.failed}</p><p>แสดงภาพใกล้เคียงสูงสุด 20 คู่ต่อบทความ คะแนนเป็นความคล้ายของภาพ ไม่ยืนยันเนื้อหาวิดีโอ ภาพตัดขอบหรือเปลี่ยนปกมากอาจค้นไม่พบ</p>{coverScan.state.error && <p role="alert">{coverScan.state.error}</p>}{coverScan.state.running ? <button onClick={coverScan.stop}>หยุดเทียบรูป</button> : <button onClick={coverScan.restart}>เทียบรูปใหม่</button>}{!!coverScan.state.reasons.length && <details><summary>รายการปกที่อ่านไม่ได้และเหตุผล</summary>{coverScan.state.reasons.map((r, i) => <p key={`${r.videoId}:${i}`}>{r.videoId}: {r.reason}</p>)}</details>}</section>}
       {rows.map(row => <MetadataBatchReviewRow key={row.id + ":" + row.status} row={row} cover={coverScan.results[row.id]} disabled={busy} prepared={plans.some(p => p.rowId === row.id)} onPrepare={prepare} onInvalidate={invalidate} />)}

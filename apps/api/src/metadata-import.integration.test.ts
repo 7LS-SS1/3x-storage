@@ -46,7 +46,7 @@ describe.skipIf(!db)("Metadata import PostgreSQL + authenticated HTTP", () => {
     Reflect.defineMetadata("design:paramtypes", [MetadataImportService], MetadataImportController);
     const fixtureCover = await fingerprintCover(await sharp({ create: { width: 32, height: 32, channels: 3, background: "#306090" } }).png().toBuffer());
     const coverService = new MetadataCoverService(prisma, { createReadUrl: async () => "https://example.test/cover.jpg" } as never, { load: async () => fixtureCover } as never);
-    Reflect.defineMetadata("design:paramtypes", [MetadataCoverService], MetadataCoverController);
+    Reflect.defineMetadata("design:paramtypes", [MetadataCoverService, MetadataImportService], MetadataCoverController);
     Reflect.defineMetadata("design:paramtypes", [PrismaService], AdminSessionGuard);
     Reflect.defineMetadata("design:paramtypes", [PrismaService], CsrfGuard);
     @Module({ controllers: [MetadataImportController, MetadataCoverController], providers: [{ provide: PrismaService, useValue: prisma }, { provide: MetadataImportService, useValue: service }, { provide: MetadataCoverService, useValue: coverService }, AdminSessionGuard, MetadataAdminGuard, CsrfGuard] }) class TestModule {}

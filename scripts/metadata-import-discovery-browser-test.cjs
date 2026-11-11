@@ -54,14 +54,13 @@ async function main(){
    await progress.getByRole('button',{name:'หยุดเทียบรูป',exact:true}).click();assert.match(await progress.innerText(),/หยุดก่อนครบคลัง/);
    await progress.getByRole('button',{name:'เทียบรูปใหม่',exact:true}).click();
    await page.waitForFunction(()=>document.querySelector('[aria-label="สถานะเปรียบเทียบรูป"]')?.textContent?.includes('เทียบภาพเสร็จแล้ว'),null,{timeout:120000});
-   assert.match(await coverRow.innerText(),/ไฟล์รูปปกตรงกันทุก byte/);
-   assert.match(await coverRow.innerText(),/metadata-browser-video-1/);
-   assert.equal(await coverRow.getByRole('button',{name:'ตรวจชื่อเรื่อง/คำอธิบายก่อนอนุมัติ',exact:true}).isDisabled(),true);
-   const pair=coverRow.locator('[aria-label="เปรียบเทียบภาพหน้าปก"]');assert.equal(await pair.locator('img').count(),2);
-   assert.equal(await pair.locator('img').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0)),true);
-   await page.setViewportSize({width:1440,height:1000});await pair.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,'cover-review-desktop.png')});
-   await page.setViewportSize({width:390,height:844});await pair.scrollIntoViewIfNeeded();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);await page.screenshot({path:path.join(out,'cover-review-mobile.png')});
-   console.log('METADATA_COVER_BROWSER_OK automatic cover-only match with unrelated IDs, paired decoded thumbnails, progress, stop/restart, approval remains disabled, desktop/mobile; synthetic images, no production R2');
+   await coverRow.getByText(/บันทึกชื่อเรื่อง\/คำอธิบายอัตโนมัติจากไฟล์/).waitFor({timeout:30000});
+   assert.equal(await coverRow.getByRole('button',{name:'เล่นวิดีโอนี้เพื่อตรวจสอบ',exact:true}).count(),0);
+   await prisma.$connect();const updated=await prisma.video.findUniqueOrThrow({where:{id:'metadata-browser-video-1'}});await prisma.$disconnect();
+   assert.equal(updated.title,coverRecord.title);assert.equal(updated.description,coverRecord.description);
+   await page.setViewportSize({width:1440,height:1000});await coverRow.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,'cover-auto-desktop.png')});
+   await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);await page.screenshot({path:path.join(out,'cover-auto-mobile.png')});
+   console.log('METADATA_COVER_AUTO_BROWSER_OK unique exact cover automatically updates text without playback; synthetic images, no production R2');
   }
   assert.deepEqual(errors,[]);
   console.log('METADATA_BATCH_REVIEW_BROWSER_OK immediate candidates after upload, unmatched row, real playback, attestation gate, switching invalidation, source-only title/description approval, PostgreSQL persistence, unchanged protected fields, rollback, desktop/mobile; local media storage double');

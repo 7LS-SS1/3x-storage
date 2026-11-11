@@ -12,7 +12,8 @@ type Values = { title: string; description: string | null; categoryId: string | 
 type Snapshot = Values & { videoUpdatedAt: string; imageVersion: number };
 type Actor = { id: string; name: string };
 type SourceState = { exists: boolean; targetVideoId?: string; rawJson?: Prisma.JsonValue; sourceHash?: string; latestChangeId?: string | null };
-type Preview = { targetVideoId: string; publicId: string; before: Snapshot; after: Values; fields: Field[]; warnings: string[]; sourceBefore: SourceState; expiresAt: number; contentReviewedAt?: string };
+type CoverProof = { basis: "exact_cover_sha256"; sha256: string; verifiedAt: string; videoUpdatedAt: string };
+type Preview = { targetVideoId: string; publicId: string; before: Snapshot; after: Values; fields: Field[]; warnings: string[]; sourceBefore: SourceState; expiresAt: number; contentReviewedAt?: string; coverProof?: CoverProof };
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const previewSchema = z.object({
   targetVideoId: z.string().trim().min(1).max(128),
@@ -116,7 +117,7 @@ export class MetadataImportService {
   private sourceState(source: { active: boolean; targetVideoId: string; rawJson: Prisma.JsonValue; sourceHash: string; latestChangeId: string | null } | null): SourceState {
     return source?.active ? { exists: true, targetVideoId: source.targetVideoId, rawJson: source.rawJson, sourceHash: source.sourceHash, latestChangeId: source.latestChangeId } : { exists: false };
   }
-  async preview(actor: Actor, rowId: string, body: unknown, contentReviewed = false) {
+  async preview(actor: Actor, rowId: string, body: unknown, contentReviewed = false, coverProof?: CoverProof) {
     const parsed = previewSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("ข้อมูลตรวจสอบไม่ถูกต้อง ต้องเลือก Video ID และฟิลด์ที่ต้องการแก้");
     const input = parsed.data;
@@ -125,6 +126,7 @@ export class MetadataImportService {
       const row = await tx.metadataImportRow.findUnique({ where: { id: rowId } }); this.assertPending(row);
       const n = row.normalizedJson as unknown as NormalizedMetadata;
       const { publicId, snapshot: before } = await this.snapshot(tx, input.targetVideoId);
+      if (coverProof && before.videoUpdatedAt !== coverProof.videoUpdatedAt) throw new ConflictException("ข้อมูลวิดีโอเปลี่ยนระหว่างตรวจรูป กรุณาตรวจใหม่");
       const source = await tx.wordPressMetadataSource.findUnique({ where: { siteUrl_postId: { siteUrl: row.siteUrl!, postId: row.postId! } } });
       if (source?.active && source.targetVideoId !== input.targetVideoId) throw new ConflictException("คีย์ต้นทางนี้เคยจับคู่กับ Video ID อื่น ต้องย้อนคืนรายการเดิมก่อนเปลี่ยนคู่");
       const after: Values = { title: before.title, description: before.description, categoryId: before.categoryId, imageUrl: before.imageUrl };
@@ -145,7 +147,7 @@ export class MetadataImportService {
         try { const url = new URL(after.imageUrl); if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error(); }
         catch { throw new BadRequestException("URL รูปต้องเป็น HTTP(S) ไม่มี credentials"); }
       }
-      const plan: Preview = { targetVideoId: input.targetVideoId, publicId, before, after, fields: fields.filter(f => before[f] !== after[f]), warnings, sourceBefore: this.sourceState(source), expiresAt: Date.now() + 15 * 60 * 1000, ...(contentReviewed ? { contentReviewedAt: new Date().toISOString() } : {}) };
+      const plan: Preview = { targetVideoId: input.targetVideoId, publicId, before, after, fields: fields.filter(f => before[f] !== after[f]), warnings, sourceBefore: this.sourceState(source), expiresAt: Date.now() + 15 * 60 * 1000, ...(coverProof ? { coverProof } : {}), ...(contentReviewed ? { contentReviewedAt: new Date().toISOString() } : {}) };
       const token = randomUUID();
       await tx.metadataImportRow.update({ where: { id: rowId }, data: { previewJson: json(plan), previewToken: token, previewActorId: actor.id } });
       return { rowId, token, ...plan };
@@ -192,7 +194,7 @@ export class MetadataImportService {
       const change = await tx.metadataChange.create({ data: { rowId, sourceId: source.id, videoId: plan.targetVideoId, actorUserId: actor.id, actorName: actor.name, beforeJson: json(plan.before), afterJson: json(after), fieldsJson: json(plan.fields), sourceBefore: json(plan.sourceBefore), sourceAfter: json({ targetVideoId: plan.targetVideoId, sourceHash, rawJson: row.rawJson }) } });
       await tx.wordPressMetadataSource.update({ where: { id: source.id }, data: { latestChangeId: change.id } });
       await tx.metadataImportRow.update({ where: { id: rowId }, data: { status: "APPLIED" } });
-      await tx.auditLog.create({ data: { actorUserId: actor.id, action: "WORDPRESS_METADATA_APPLIED", entityType: "Video", entityId: plan.targetVideoId, metadataJson: { batchId: row.batchId, rowId, changeId: change.id, fields: plan.fields, ...(plan.contentReviewedAt ? { contentReviewedAt: plan.contentReviewedAt } : {}) } } });
+      await tx.auditLog.create({ data: { actorUserId: actor.id, action: "WORDPRESS_METADATA_APPLIED", entityType: "Video", entityId: plan.targetVideoId, metadataJson: { batchId: row.batchId, rowId, changeId: change.id, fields: plan.fields, ...(plan.coverProof ? { coverProof: plan.coverProof } : {}), ...(plan.contentReviewedAt ? { contentReviewedAt: plan.contentReviewedAt } : {}) } } });
       return { rowId, status: "APPLIED", changeId: change.id, replay: false };
     }, { timeout: 15000 });
   }
