@@ -59,10 +59,16 @@ function normalize(raw: unknown, siteFallback?: unknown): ParsedMetadataRow {
   const result: ParsedMetadataRow = { ordinal: 0, raw, normalized: {}, errors: [], warnings: [] };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) { result.errors.push("รายการต้องเป็น object"); return result; }
   const r = raw as Record<string, unknown>, n = result.normalized;
+  // RetroTube backup v1 flattens attachment fields into the record. Its
+  // `description` belongs to the image, not the article. Keep it only in raw.
+  const attachmentDescription = Object.hasOwn(r, "featured_image_id")
+    && r.image_provenance !== null && typeof r.image_provenance === "object"
+    && typeof r.content_raw === "string" && typeof r.excerpt_raw === "string";
   try { n.siteUrl = canonicalSite(r.site_url ?? siteFallback); } catch { result.errors.push("site_url ไม่ถูกต้อง (ต้องเป็น URL HTTP(S) ไม่มี query/credentials)"); }
   if ((typeof r.post_id !== "number" && typeof r.post_id !== "string") || !/^[1-9]\d*$/.test(String(r.post_id)) || !Number.isSafeInteger(Number(r.post_id))) result.errors.push("post_id ต้องเป็นจำนวนเต็มบวกที่ถูกต้อง");
   else n.postId = String(r.post_id);
   for (const [source, target, max] of [["title", "title", 200], ["description", "description", 100000], ["target_video_id", "targetVideoId", 128]] as const) {
+    if (source === "description" && attachmentDescription) continue;
     if (r[source] !== undefined && r[source] !== null) {
       if (typeof r[source] !== "string" || r[source].length > max) result.errors.push(`${source} ต้องเป็นข้อความไม่เกิน ${max} ตัวอักษร`);
       else if (source !== "target_video_id" || r[source].trim()) n[target] = r[source];
@@ -97,16 +103,18 @@ function normalize(raw: unknown, siteFallback?: unknown): ParsedMetadataRow {
   }
   n.descriptionOptions = [];
   for (const key of ["description", "excerpt_raw", "content_raw"]) {
+    if (key === "description" && attachmentDescription) continue;
     if (typeof r[key] === "string") n.descriptionOptions.push({ source: key, value: r[key] });
   }
   if (Array.isArray(r.description_sources)) {
     for (const item of r.description_sources) if (item && typeof item.source_field === "string" && typeof item.value === "string") n.descriptionOptions.push({ source: item.source_field, value: item.value });
   }
   if (n.description === undefined) {
-    const preferred = n.descriptionOptions.find(o => o.source === "excerpt_raw") ?? n.descriptionOptions.find(o => o.source === "content_raw");
-    if (preferred && preferred.value.length <= 100000) { n.description = preferred.value; result.warnings.push(`คำอธิบายเริ่มต้นอ่านจาก ${preferred.source}; ตรวจหรือเลือกแหล่งอื่นก่อนบันทึก`); }
+    const preferred = n.descriptionOptions.find(o => o.value.trim());
+    if (preferred && preferred.value.length <= 100000) { n.description = preferred.value; result.warnings.push(`คำอธิบายเริ่มต้นอ่านจาก ${preferred.source}; ตรวจข้อความก่อนอนุมัติ`); }
     else if (preferred) result.warnings.push("คำอธิบายต้นทางยาวเกินขอบเขตการแก้ไข เก็บต้นฉบับไว้ครบแต่ต้องเลือกข้อความก่อนบันทึก");
   }
+  if (attachmentDescription) result.warnings.push("description ในไฟล์ RetroTube เป็นคำอธิบายรูปภาพ เก็บไว้ในข้อมูลต้นทาง ไม่ใช้เป็นคำอธิบายวิดีโอ");
   result.warnings.push("App รองรับหมวดหมู่เดียว: เลือกหมวดหมู่ปลายทางเอง; หลายหมวดหมู่ แท็ก และ taxonomy อื่นเก็บครบในข้อมูลต้นทาง ไม่สร้างอัตโนมัติ");
   result.warnings.push("image_url เก็บเป็น metadata เท่านั้น ไม่เปลี่ยนปก R2, storage key หรือ iframe");
   if (!n.targetVideoId) result.warnings.push("ยังไม่ระบุ target_video_id: ระบบค้นหาตัวเลือกจาก URL embed/ไฟล์ให้ แต่ต้องตรวจและเลือกคู่ก่อนบันทึก ไม่จับคู่จากชื่อคล้ายกัน");
@@ -126,6 +134,9 @@ export function parseMetadataFile(buffer: Buffer, filename: string) {
   } else throw new Error("รองรับเฉพาะไฟล์ .json และ .csv UTF-8");
   if (!records.length || records.length > MAX_METADATA_ROWS) throw new Error("ไฟล์ต้องมี 1–500 รายการ");
   const rows = records.map((r, index) => ({ ...normalize(r, header.site_url), ordinal: index + 1 }));
+  if (format === "csv") for (const row of rows) {
+    if (row.normalized.description === undefined) row.warnings.push("CSV นี้ไม่มีคำอธิบายบทความที่ใช้ได้ หากเป็น CSV สรุปจาก RetroTube ให้ใช้ไฟล์ JSON ที่ export คู่กันเพื่ออ่านคำอธิบายครบถ้วน");
+  }
   const keys = new Map<string, ParsedMetadataRow[]>();
   for (const row of rows) {
     if (!row.normalized.siteUrl || !row.normalized.postId) continue;

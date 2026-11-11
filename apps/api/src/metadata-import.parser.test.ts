@@ -31,4 +31,25 @@ describe("WordPress metadata parser", () => {
     const row = parse([{ site_url: "https://example.test", post_id: 1, description: "", excerpt_raw: "fallback" }]).rows[0]!;
     expect(row.normalized.description).toBe(""); expect(metadataHash({ b: 1, a: [2] })).toBe(metadataHash({ a: [2], b: 1 }));
   });
+  it.each(["", "คำอธิบายรูปภาพที่ห้ามนำไปแทนบทความ"])("reads article content instead of flattened attachment description %s", description => {
+    const original = { site_url: "https://example.test", post_id: 1, featured_image_id: 2,
+      image_provenance: { attached_file: "_wp_attached_file" }, description, excerpt_raw: "",
+      content_raw: '<p>คำอธิบายบทความ</p>\n[shortcode]', description_sources: [{ source_field: "rank_math_description", value: "คำอธิบาย SEO" }] };
+    const row = parse([original]).rows[0]!;
+    expect(row.errors).toEqual([]);
+    expect(row.normalized.description).toBe(original.content_raw);
+    expect(row.normalized.descriptionOptions!.some(o => o.source === "description")).toBe(false);
+    expect(row.raw).toEqual(original);
+  });
+  it("skips blank excerpts and uses an available source without rewriting its text", () => {
+    const row = parse([{ site_url: "https://example.test", post_id: 1, excerpt_raw: " \n", content_raw: "",
+      description_sources: [{ source_field: "rank_math_description", value: "  ต้นฉบับ <b>ไทย</b>  " }] }]).rows[0]!;
+    expect(row.normalized.description).toBe("  ต้นฉบับ <b>ไทย</b>  ");
+  });
+  it("does not invent a description for a summary CSV or an empty article", () => {
+    const csv = parseMetadataFile(Buffer.from("site_url,post_id,title,iframe_src\nhttps://example.test,1,ทั่วไป,https://storage.test/embed/example"), "summary.csv");
+    expect(csv.rows[0]!.normalized.description).toBeUndefined();
+    expect(csv.rows[0]!.warnings.some(w => w.includes("CSV สรุป"))).toBe(true);
+    expect(parse([{ site_url: "https://example.test", post_id: 1, featured_image_id: null, image_provenance: [], description: "ภาพ", content_raw: "", excerpt_raw: "" }]).rows[0]!.normalized.description).toBeUndefined();
+  });
 });
