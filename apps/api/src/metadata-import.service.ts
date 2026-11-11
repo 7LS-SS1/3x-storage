@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { PrismaService } from "./prisma.service";
 import { metadataHash, parseMetadataFile, type NormalizedMetadata } from "./metadata-import.parser";
+import { createPosterDeliveryUrl } from "./poster-delivery-url";
 import { metadataReferences } from "./metadata-import-matching";
 
 const fields = ["title", "description", "categoryId", "imageUrl"] as const;
@@ -197,6 +198,27 @@ export class MetadataImportService {
       await tx.auditLog.create({ data: { actorUserId: actor.id, action: "WORDPRESS_METADATA_APPLIED", entityType: "Video", entityId: plan.targetVideoId, metadataJson: { batchId: row.batchId, rowId, changeId: change.id, fields: plan.fields, ...(plan.coverProof ? { coverProof: plan.coverProof } : {}), ...(plan.contentReviewedAt ? { contentReviewedAt: plan.contentReviewedAt } : {}) } } });
       return { rowId, status: "APPLIED", changeId: change.id, replay: false };
     }, { timeout: 15000 });
+  }
+  async exportChanged(batchId: string) {
+    return this.prisma.$transaction(async tx => {
+      if (!await tx.metadataImportBatch.findUnique({ where: { id: batchId }, select: { id: true } })) throw new NotFoundException("ไม่พบ batch");
+      const changes = await tx.metadataChange.findMany({
+        where: { revertedAt: null, row: { batchId, status: "APPLIED" }, video: { deletedAt: null, status: { notIn: ["DELETING", "DELETED"] } } },
+        orderBy: { row: { ordinal: "asc" } }, take: 501,
+        select: { fieldsJson: true, video: { select: { id: true, title: true, publicId: true, posterKey: true, category: { select: { name: true } }, files: { select: { id: true, role: true } } } } }
+      });
+      if (changes.length > 500) throw new BadRequestException("จำนวนรายการเกินขอบเขต batch");
+      const unique = new Map(changes.filter(change => Array.isArray(change.fieldsJson) && change.fieldsJson.length > 0).map(change => [change.video.id, change.video]));
+      if (!unique.size) return { batchId, exportedAt: new Date().toISOString(), videos: [] };
+      let player: string;
+      try { const url = new URL(process.env.PLAYER_URL || process.env.ADMIN_URL || ""); if (!["http:", "https:"].includes(url.protocol)) throw new Error(); player = url.origin; }
+      catch { throw new ConflictException("ยังไม่ได้ตั้งค่า PLAYER_URL ให้ถูกต้อง"); }
+      const videos = [...unique.values()].map(video => {
+        const fileId = ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"].map(role => video.files.find(file => file.role === role)?.id).find(Boolean) || video.id;
+        return { title: video.title, category: video.category?.name || "", embedUrl: `${player}/embed/${video.publicId}`, thumbnailUrl: video.posterKey ? createPosterDeliveryUrl({ videoPublicId: video.publicId, fileId, storageKey: video.posterKey }) : "" };
+      });
+      return { batchId, exportedAt: new Date().toISOString(), videos };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
   async history(page: number) {
     const [changes, total] = await Promise.all([this.prisma.metadataChange.findMany({ orderBy: { createdAt: "desc" }, skip: (page - 1) * 25, take: 25, select: { id: true, videoId: true, actorUserId: true, actorName: true, beforeJson: true, afterJson: true, fieldsJson: true, createdAt: true, revertedAt: true, revertedById: true, row: { select: { batchId: true, siteUrl: true, postId: true } } } }), this.prisma.metadataChange.count()]);

@@ -1,3 +1,11 @@
+# Export changed items — 2026-11-12
+
+The selected batch has an “Export รายการที่แก้ไขแล้ว” button. It downloads a UTF-8 BOM CSV using the existing 3x-storage video exporter with the exact WordPress importer columns: title, หมวดหมู่, videos url, url images. The videos url cell contains the current iframe. It is a WordPress-compatible summary, not a full audit/description backup.
+
+The administrator-only GET batches/:id/export-changed endpoint runs a read-only Repeatable Read transaction: select non-reverted MetadataChange records whose row belongs to the selected batch and is APPLIED, exclude empty fieldsJson (no actual field change), deleted/deleting videos, and deduplicate video IDs. Export uses current video title/category/publicId and the existing signed poster URL helper. Pending, invalid, NOOP and rolled-back records are not included. Selection spans all display pages. Empty results show a message and do not download unrelated videos. During an ongoing batch, the CSV includes only committed items visible at export time; repeat export after completion for the complete set.
+
+No schema migration or source/media mutation. Existing session/admin authorization and no-store response headers apply; GET is read-only. Existing CSV quoting/formula protection is reused. Tests: 4 API service tests plus 2 existing CSV tests pass; API/admin TypeScript checks pass. These are local unit/static checks, not a deployed production download or real WordPress import test. Deploy API and admin together. Rollback is reverting this UI/read-only route; no data restore or worker drain needed.
+
 # Whole-batch immediate updates — 2026-11-12
 
 Latest user authorization: process every row in the selected batch in one continuous run, and save a byte-identical cover match immediately instead of waiting for the rest of the library or a new visible page.

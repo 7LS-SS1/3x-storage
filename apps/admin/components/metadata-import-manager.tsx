@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api-client";
 import { MetadataBatchReviewRow, type BatchReviewRow, type TextField } from "./metadata-batch-review-row";
 import styles from "./metadata-import-manager.module.css";
+import { downloadVideosCsv, type VideoExportRow } from "./video-export";
 import { useMetadataCoverScan } from "./metadata-cover-scan";
 
 type Field = "title" | "description" | "categoryId" | "imageUrl";
@@ -43,6 +44,16 @@ export function MetadataImportManager() {
       setNotice("กำลังตรวจรูปปก เมื่อพบรูปตรงกันทุก byte ระบบจะอัปเดตชื่อเรื่อง/คำอธิบายอัตโนมัติทันทีที่พบคู่");
     });
   }
+  async function exportChanged() {
+    if (!batch) return;
+    const batchId = batch.id;
+    await action(async () => {
+      const result = await apiRequest<{ videos: VideoExportRow[]; exportedAt: string }>(`/metadata-import/batches/${encodeURIComponent(batchId)}/export-changed`);
+      if (!result.videos.length) { setNotice("ยังไม่มีรายการที่แก้ไขสำเร็จและยังไม่ย้อนคืนใน batch นี้"); return; }
+      downloadVideosCsv(result.videos, `3x-storage-updated-${batchId}-${result.exportedAt.replace(/[:.]/g, "-")}.csv`);
+      setNotice(`ส่งออก ${result.videos.length} วิดีโอที่แก้ไขแล้วเป็น CSV สำหรับ WordPress (ข้อมูลปัจจุบัน ณ เวลาส่งออก)`);
+    });
+  }
   async function prepare(rowId: string, targetVideoId: string, fields: TextField[]) {
     if (plans.length >= 2 && !plans.some(p => p.rowId === rowId)) { setError("ตรวจและอนุมัติครั้งละไม่เกิน 2 รายการ"); return; }
     await action(async () => {
@@ -72,7 +83,7 @@ export function MetadataImportManager() {
     <section className={styles.card}><h2>1. อัปโหลด Batch</h2><p>JSON/CSV UTF-8 สูงสุด 10 MiB / 500 รายการ แนะนำ JSON เพื่อให้ได้คำอธิบายครบถ้วน</p><div className={styles.controls}><input aria-label="ไฟล์ metadata" type="file" accept=".json,.csv" disabled={busy} onChange={e => { setFile(e.target.files?.[0] || null); setError(""); }} /><button disabled={busy || !file} onClick={() => void upload()}>อัปโหลดและค้นหาคู่</button></div>
       <label>เปิด batch เดิม<select aria-label="เลือก batch" disabled={busy} value={batch?.id || ""} onChange={e => { if (e.target.value) void action(async () => { setPlans([]); setConfirm(false); await loadBatch(e.target.value); }); }}><option value="">เลือก batch</option>{batches.map(b => <option key={b.id} value={b.id}>{b.filename} — {date(b.createdAt)} — {b.id}</option>)}</select></label>
     </section>
-    {batch && <section className={styles.card} aria-label="รายการตรวจสอบ batch"><h2>2. ผลการจับคู่และอัปเดตข้อมูล</h2><p>Batch ID: <code>{batch.id}</code> • ทั้งหมด {total} บทความ</p><p>ตรวจทั้ง batch ต่อเนื่องในรอบเดียว และบันทึกทันทีที่พบรูปตรงกัน การเปลี่ยนหน้ามีไว้ดูผลเท่านั้น ไม่เริ่มตรวจใหม่</p>
+    {batch && <section className={styles.card} aria-label="รายการตรวจสอบ batch"><h2>2. ผลการจับคู่และอัปเดตข้อมูล</h2><button disabled={busy} onClick={() => void exportChanged()}>Export รายการที่แก้ไขแล้ว</button><p>CSV สำหรับ WordPress • เฉพาะรายการที่บันทึกสำเร็จใน batch นี้และยังไม่ย้อนคืน • หากงานยังทำอยู่ จะส่งออกเท่าที่บันทึกแล้ว ณ ตอนดาวน์โหลด</p><p>Batch ID: <code>{batch.id}</code> • ทั้งหมด {total} บทความ</p><p>ตรวจทั้ง batch ต่อเนื่องในรอบเดียว และบันทึกทันทีที่พบรูปตรงกัน การเปลี่ยนหน้ามีไว้ดูผลเท่านั้น ไม่เริ่มตรวจใหม่</p>
       {busy && !rows.length && <p role="status">กำลังค้นหาวิดีโอในแอปสำหรับหน้านี้…</p>}
       {!!rows.length && <section className={styles.note} aria-label="สถานะเปรียบเทียบรูป"><strong>ค้นหาจากภาพหน้าปกจริง</strong><p role="status">{coverScan.state.running ? "กำลังเทียบภาพ" : coverScan.state.done ? "เทียบภาพเสร็จแล้ว" : "การเทียบภาพยังไม่ครบ"} • อ่านรูปต้นทาง {coverScan.state.sourceRead}/{coverScan.state.sourceTotal} • บันทึกแล้ว {coverScan.state.applied} • บันทึกผิดพลาด {coverScan.state.applyFailed} • เว้นไว้ {coverScan.state.done ? Math.max(0, coverScan.state.sourceTotal - coverScan.state.applied - coverScan.state.applyFailed) : "รอสรุป"} • ตรวจ {coverScan.state.scanned}/{coverScan.state.total} วิดีโอ • เทียบได้ {coverScan.state.compared} • ไม่มีปก {coverScan.state.missing} • อ่านปกไม่ได้ {coverScan.state.failed}</p><p>บันทึกเมื่อพบไฟล์รูปปกตรงกันทุก byte เท่านั้น รูปคล้ายแต่คนละไฟล์จะเว้นไว้ รูปต้นทางซ้ำกันหลายบทความใน batch จะไม่ถูกเขียนทับอัตโนมัติ</p>{coverScan.state.error && <p role="alert">{coverScan.state.error}</p>}{coverScan.state.running ? <button onClick={coverScan.stop}>หยุดเทียบรูป</button> : <button onClick={coverScan.restart}>เทียบรูปใหม่</button>}{!!coverScan.state.reasons.length && <details><summary>รายการปกที่อ่านไม่ได้และเหตุผล</summary>{coverScan.state.reasons.map((r, i) => <p key={`${r.videoId}:${i}`}>{r.videoId}: {r.reason}</p>)}</details>}</section>}
       {rows.map(row => <MetadataBatchReviewRow key={row.id + ":" + row.status} row={row} cover={coverScan.results[row.id]} disabled={busy || coverScan.state.running} prepared={plans.some(p => p.rowId === row.id)} onPrepare={prepare} onInvalidate={invalidate} />)}

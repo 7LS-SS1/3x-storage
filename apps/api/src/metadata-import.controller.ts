@@ -62,6 +62,7 @@ export class MetadataImportController {
     }
     return { results };
   }
+  @Get("batches/:id/export-changed") async exportChanged(@Param("id") id: string) { return this.service.exportChanged(id); }
   @Get("history") async history(@Query("page") page?: string) { return this.service.history(pageNumber(page)); }
   @Post("history/:id/rollback") async rollback(@Req() req: AdminRequest, @Param("id") id: string, @Body() body: unknown) {
     if (!z.object({ confirm: z.literal(true) }).strict().safeParse(body).success) throw new BadRequestException("ต้องยืนยันก่อนย้อนคืน");
