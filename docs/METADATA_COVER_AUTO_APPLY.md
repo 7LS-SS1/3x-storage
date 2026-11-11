@@ -1,3 +1,17 @@
+# Whole-batch immediate updates — 2026-11-12
+
+Latest user authorization: process every row in the selected batch in one continuous run, and save a byte-identical cover match immediately instead of waiting for the rest of the library or a new visible page.
+
+The new whole-cover-scan endpoint reads all pending rows (up to the existing 500-row import limit), prepares source hashes in bounded groups of eight, and then traverses the video library once in 16-video chunks. All source hashes are prepared first so duplicate source covers across different display pages are skipped before any writes. A matching row is sent for automatic application immediately after its video chunk, before the next chunk. Unrelated unreadable posters no longer block other matches. After all resolvable rows find a match, scanning stops early.
+
+Immediate matching uses the first byte-identical target encountered in ascending Video ID order; it does not wait to prove there are no later videos sharing that cover. Each source row is attempted once per run. This deliberately replaces the previous complete-library uniqueness gate following the user's latest request. Source-cover duplicates within the batch remain skipped. Similar-but-not-identical images are not automatically changed. Fresh server-side SHA verification, version checks, administrator/CSRF guards, per-row transactions, nonempty text-only updates, audit and rollback remain.
+
+The client job depends only on batch ID/restart, not visible page or current row IDs. Pagination is display-only; previously loaded results and applied status remain. Progress includes prepared source count, scanned videos, applied, apply errors and final skipped count. Stop leaves already committed rows saved; refresh/restart only processes still-pending records. Keep the page open: this is request-driven work, not a durable background worker. Session expiry/process restart requires a new run; no schema migration is needed. Eight active whole-batch sessions / 64 total scan sessions are allowed, expiring after one hour without activity.
+
+Validation this change: both API/admin TypeScript checks; 28 API tests (including full 30-row batch beyond one display page, immediate apply before end of library, whole-batch duplicate source handling and user isolation); 5 UI hook tests including stable pagination dependencies and apply-before-next-chunk order. No production run/deploy or database-backed whole-batch end-to-end run claimed. Historical Docker test rejection below remains a prior-turn limitation, not a new test result. Deploy API and admin together; rollback code restores the earlier scan flow; committed changes are reverted individually through history. No media worker drain or migration is required.
+
+## Previous per-page implementation (superseded)
+
 # Automatic metadata update from identical covers — 2026-11-12
 
 User authorized replacing playback/manual approval with automatic writes for identical cover files. On the currently open 25-row batch page, the browser scans the complete video library and then applies eligible rows one at a time. Only nonempty title/description from the staged file are written; similarity scores below an exact SHA-256 match do not qualify.

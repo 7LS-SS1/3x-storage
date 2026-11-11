@@ -15,13 +15,14 @@ type CoverCandidate = { id: string; publicId: string; title: string; evidence: s
 @Injectable()
 export class MetadataCoverService {
   private active = 0;
-  private scans = new Map<string, { actor: string; batch: string; page: number; after?: string; ceiling?: string; expires: number; done: boolean; failed: number; scanned: number; total: number; matches: Map<string, Set<string>>; busy: boolean }>();
+  private scans = new Map<string, { whole?: boolean; actor: string; batch: string; page: number; after?: string; ceiling?: string; expires: number; done: boolean; failed: number; scanned: number; total: number; matches: Map<string, Set<string>>; busy: boolean }>();
+  private whole = new Map<string, { sources: { id: string; url?: string; hash?: string; thumbnail?: string; attempted?: boolean }[]; loaded: number; sourceTotal: number; compared: number; missing: number }>();
   constructor(private readonly prisma: PrismaService, private readonly storage: StorageService, private readonly images: MetadataCoverImages) {}
   async scan(batchId: string, body: unknown, actorId?: string) {
     const parsed = inputSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("ข้อมูลค้นหารูปไม่ถูกต้อง");
     if (this.active >= 2) throw new HttpException("มีการเปรียบเทียบรูปอยู่ กรุณาลองใหม่", 429);
-    for (const [key, scan] of this.scans) if (scan.expires < Date.now()) this.scans.delete(key);
+    for (const [key, scan] of this.scans) if (scan.expires < Date.now()) { this.scans.delete(key); this.whole.delete(key); }
     const id = parsed.data.scanId || randomUUID();
     let scan = this.scans.get(id);
     if (actorId) {
@@ -51,9 +52,84 @@ export class MetadataCoverService {
       return { ...result, scanId: actorId ? id : undefined, autoRows };
     } finally { this.active--; if (scan) scan.busy = false; }
   }
+  async wholeStep(batchId: string, body: unknown, actorId: string) {
+    const parsed = z.object({ scanId: z.string().uuid().optional() }).strict().safeParse(body);
+    if (!parsed.success) throw new BadRequestException("ข้อมูลรอบตรวจไม่ถูกต้อง");
+    for (const [key, item] of this.scans) if (item.expires < Date.now()) { this.scans.delete(key); this.whole.delete(key); }
+    const id = parsed.data.scanId || randomUUID();
+    if (!parsed.data.scanId) {
+      if (this.whole.size >= 8 || this.scans.size >= 64) throw new HttpException("มีงานตรวจทั้ง batch อยู่ กรุณารอ", 429);
+      if (!await this.prisma.metadataImportBatch.findUnique({ where: { id: batchId }, select: { id: true } })) throw new NotFoundException("ไม่พบ batch");
+      const rows = await this.prisma.metadataImportRow.findMany({ where: { batchId, status: "PENDING" }, orderBy: { ordinal: "asc" }, take: 501, select: { id: true, normalizedJson: true } });
+      if (rows.length > 500) throw new BadRequestException("batch ต้องไม่เกิน 500 รายการ");
+      const eligible = { deletedAt: null, status: { notIn: ["DELETING", "DELETED"] as ("DELETING" | "DELETED")[] } };
+      const ceiling = (await this.prisma.video.findFirst({ where: eligible, orderBy: { id: "desc" }, select: { id: true } }))?.id || "";
+      const total = await this.prisma.video.count({ where: { ...eligible, id: { lte: ceiling } } });
+      this.scans.set(id, { whole: true, actor: actorId, batch: batchId, page: 1, ceiling, expires: Date.now()+60*60_000, done: false, failed: 0, scanned: 0, total, matches: new Map(), busy: false });
+      this.whole.set(id, { sources: rows.map(row => ({ id: row.id, url: (row.normalizedJson as { imageUrl?: string }).imageUrl })), loaded: 0, sourceTotal: rows.length, compared: 0, missing: 0 });
+    }
+    const scan = this.scans.get(id), work = this.whole.get(id);
+    if (!scan || !work || scan.actor !== actorId || scan.batch !== batchId) throw new ConflictException("รอบตรวจหมดอายุ กรุณาเริ่มใหม่");
+    if (scan.busy || this.active >= 2) throw new HttpException("กำลังประมวลผล กรุณารอ", 429);
+    scan.expires = Date.now()+60*60_000;
+    scan.busy = true; this.active++;
+    const rows: { rowId: string; source: string | null; error: string | null; candidates: CoverCandidate[] }[] = [];
+    const failed: { videoId: string; reason: string }[] = [];
+    const autoRows: string[] = [];
+    let scanned = 0, compared = 0, missing = 0;
+    try {
+      if (work.loaded < work.sources.length) {
+        const chunk = work.sources.slice(work.loaded, work.loaded+8);
+        for (let start=0; start<chunk.length; start+=4) await Promise.all(chunk.slice(start,start+4).map(async source => {
+          try {
+            if (!source.url) throw new Error("ไม่มี URL รูปปกต้นทาง");
+            const image = await this.images.load(`source:${source.url}`, async()=>source.url!);
+            source.hash=image.sha256; source.thumbnail=image.thumbnail;
+            rows.push({rowId:source.id,source:image.thumbnail,error:null,candidates:[]});
+          } catch(e) { rows.push({rowId:source.id,source:null,error:e instanceof Error?e.message:"อ่านรูปต้นทางไม่ได้",candidates:[]}); }
+        }));
+        work.loaded += chunk.length;
+        if (work.loaded === work.sources.length) {
+          // Resolve duplicate source covers across the entire batch before writing any target.
+          const counts = new Map<string,number>();for(const source of work.sources) if(source.hash) counts.set(source.hash,(counts.get(source.hash)||0)+1);
+          for(const source of work.sources) if(source.hash && counts.get(source.hash)!==1) {
+            source.attempted=true;
+            rows.push({rowId:source.id,source:source.thumbnail!,error:"หลายบทความใน batch ใช้รูปเดียวกัน จึงเว้นไว้ไม่เขียนทับ",candidates:[]});
+          }
+        }
+      } else if (!scan.done) {
+        const remaining = work.sources.filter(source=>source.hash && !source.attempted);
+        const videos = remaining.length ? await this.prisma.video.findMany({where:{deletedAt:null,status:{notIn:["DELETING","DELETED"]},id:{gt:scan.after||"",lte:scan.ceiling}},orderBy:{id:"asc"},take:17,select:{id:true,publicId:true,title:true,posterKey:true,updatedAt:true}}) : [];
+        const selected=videos.slice(0,16);
+        // Read concurrently, consume in ID order so a repeated cover has a deterministic first match.
+        for(let start=0;start<selected.length;start+=4) {
+          const checked=await Promise.all(selected.slice(start,start+4).map(async video=>{
+            if(!video.posterKey)return {video,image:null,error:null};
+            try{return {video,image:await this.images.load(`poster:${video.posterKey}:${video.updatedAt.toISOString()}`,()=>this.storage.createReadUrl(video.posterKey!,120)),error:null};}
+            catch(e){return {video,image:null,error:e instanceof Error?e.message:"อ่านรูปปกไม่ได้"};}
+          }));
+          for(const {video,image,error} of checked) {
+            scanned++;
+            if(error){failed.push({videoId:video.id,reason:error});continue;}
+            if(!image){missing++;continue;}
+            compared++;
+            for(const source of remaining) if(!source.attempted && source.hash===image.sha256) {
+              source.attempted=true;scan.matches.set(source.id,new Set([video.id]));autoRows.push(source.id);
+              rows.push({rowId:source.id,source:source.thumbnail!,error:null,candidates:[{id:video.id,publicId:video.publicId,title:video.title,evidence:["ไฟล์รูปปกตรงกันทุก byte (SHA-256) — บันทึกอัตโนมัติทันทีโดยไม่รอจบคลัง"],cover:{score:100,exact:true,thumbnail:image.thumbnail}}]});
+            }
+          }
+        }
+        scan.scanned+=scanned;scan.failed+=failed.length;work.compared+=compared;work.missing+=missing;
+        scan.after=selected.at(-1)?.id || scan.after;
+        scan.done=videos.length<=16 || work.sources.every(source=>!source.hash || source.attempted);
+      }
+      if (!work.sources.length) scan.done=true;
+      return {scanId:id,autoRows,ceiling:scan.ceiling!,next:scan.done?null:id,total:scan.total,scanned,compared,missing,failed,rows,sourceRead:work.loaded,sourceTotal:work.sourceTotal};
+    } finally { scan.busy=false;this.active--; if(scan.done) this.whole.delete(id); }
+  }
   async applyExact(scanId: string, rowId: string, actor: { id: string; name: string }, imports: MetadataImportService) {
     const scan = this.scans.get(scanId), targets = scan?.matches.get(rowId);
-    if (!scan || scan.actor !== actor.id || scan.expires < Date.now() || !scan.done || scan.failed || scan.scanned !== scan.total || targets?.size !== 1) throw new ConflictException("ต้องตรวจครบคลังและพบรูปตรงกันเพียงวิดีโอเดียว");
+    if (!scan || scan.actor !== actor.id || scan.expires < Date.now() || (!scan.whole && (!scan.done || scan.failed || scan.scanned !== scan.total)) || targets?.size !== 1) throw new ConflictException("ต้องตรวจครบคลังและพบรูปตรงกันเพียงวิดีโอเดียว");
     if ([...scan.matches.values()].filter(ids => ids.has([...targets][0]!)).length !== 1) throw new ConflictException("หลายบทความใช้รูปปกเดียวกัน จึงไม่เขียนทับอัตโนมัติ");
     if (scan.busy) throw new ConflictException("กำลังบันทึก กรุณารอ");
     scan.busy = true;
@@ -121,6 +197,9 @@ export class MetadataCoverController {
   @Post("batches/:id/cover-scan")
   @Header("Cache-Control", "private, no-store, max-age=0")
   scan(@Param("id") id: string, @Body() body: unknown, @Req() req: AdminRequest) { return this.service.scan(id, body, req.auth.user.id); }
+  @Post("batches/:id/whole-cover-scan")
+  @Header("Cache-Control", "private, no-store, max-age=0")
+  wholeScan(@Param("id") id: string, @Body() body: unknown, @Req() req: AdminRequest) { return this.service.wholeStep(id, body, req.auth.user.id); }
   @Post("rows/:id/auto-cover-apply")
   @Header("Cache-Control", "private, no-store, max-age=0")
   autoApply(@Param("id") id: string, @Body() body: unknown, @Req() req: AdminRequest) {
