@@ -10,6 +10,7 @@ const protectedPrefixes = [
   "/users",
   "/domains",
   "/audit",
+  "/metadata-import",
   "/settings"
 ];
 

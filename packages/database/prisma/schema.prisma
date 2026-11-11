@@ -154,6 +154,9 @@ model Video {
   allowedDomains    VideoAllowedDomain[]
   bandwidthDaily    BandwidthDaily[]
   googleDriveImport GoogleDriveImport?
+  metadataImage     VideoMetadataImage?
+  wordpressSources WordPressMetadataSource[]
+  metadataChanges  MetadataChange[]
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
 
@@ -376,4 +379,83 @@ model AuthRateLimit {
   updatedAt       DateTime  @updatedAt
 
   @@index([blockedUntil])
+}
+
+// Metadata import staging and history are separate from media/storage contracts.
+model MetadataImportBatch {
+  id          String   @id @default(cuid())
+  actorUserId String
+  filename    String
+  format      String
+  headerJson  Json
+  createdAt   DateTime @default(now())
+  rows        MetadataImportRow[]
+}
+
+model MetadataImportRow {
+  id               String @id @default(cuid())
+  batchId          String
+  batch            MetadataImportBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  ordinal          Int
+  siteUrl          String?
+  postId           String?
+  rawJson          Json
+  normalizedJson   Json
+  errorsJson       Json
+  warningsJson     Json
+  status           String @default("PENDING")
+  previewJson      Json?
+  previewToken     String?
+  previewActorId   String?
+  createdAt        DateTime @default(now())
+  change           MetadataChange?
+
+  @@unique([batchId, ordinal])
+  @@index([batchId, status])
+}
+
+model VideoMetadataImage {
+  videoId   String @id
+  video     Video @relation(fields: [videoId], references: [id], onDelete: Restrict)
+  imageUrl  String?
+  version   Int @default(0)
+}
+
+model WordPressMetadataSource {
+  id             String @id @default(cuid())
+  siteUrl        String
+  postId         String
+  targetVideoId  String
+  targetVideo    Video @relation(fields: [targetVideoId], references: [id], onDelete: Restrict)
+  rawJson        Json
+  sourceHash     String
+  active         Boolean @default(true)
+  latestChangeId String?
+  updatedAt      DateTime @updatedAt
+  changes        MetadataChange[]
+
+  @@unique([siteUrl, postId])
+}
+
+model MetadataChange {
+  id             String @id @default(cuid())
+  rowId          String @unique
+  row            MetadataImportRow @relation(fields: [rowId], references: [id], onDelete: Restrict)
+  sourceId       String
+  source         WordPressMetadataSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  videoId        String
+  video          Video @relation(fields: [videoId], references: [id], onDelete: Restrict)
+  actorUserId    String
+  actorName      String
+  beforeJson     Json
+  afterJson      Json
+  fieldsJson     Json
+  sourceBefore   Json
+  sourceAfter    Json
+  createdAt      DateTime @default(now())
+  revertedAt     DateTime?
+  revertedById   String?
+
+  @@index([videoId, createdAt])
+  @@index([createdAt])
 }

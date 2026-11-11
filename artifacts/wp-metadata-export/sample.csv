@@ -1,0 +1,9 @@
+﻿site_url,post_id,title,post_status,post_url,featured_image_url,filename,iframe_src,parsed_embed_id
+https://wordpress.example.test,900001,"'=ทดสอบ ""CSV"", ภาษาไทย",publish,https://wordpress.example.test/?p=900001,http://localhost:8080/wp-content/uploads/2026/11/photo-scaled.jpg,photo-scaled.jpg,"https://storage.example.test/embed/demo-101?a=1&amp;b=2
+//storage.example.test/embed/demo-102
+https://storage.example.test/embed/demo-103?x=1&amp;y=2
+/embed/second-value","demo-101
+demo-102
+demo-103
+second-value"
+https://wordpress.example.test,900002,"ตัวอย่าง 2",publish,https://wordpress.example.test/?p=900002,,,,

@@ -1,0 +1,339 @@
+{
+    "schema_version": "1.0.0",
+    "exported_at_utc": "2026-11-11T15:53:31+00:00",
+    "site_url": "https://wordpress.example.test",
+    "filters": {
+        "post_type": "post",
+        "post_status": "publish",
+        "date_basis": "post_date",
+        "timezone": "+07:00",
+        "post_ids": [
+            900001,
+            900002
+        ],
+        "date_from": "",
+        "date_to": ""
+    },
+    "field_mapping": {
+        "embed": [
+            "embed",
+            "shortcode"
+        ],
+        "video": [
+            "video_url",
+            "video_url_4k",
+            "video_url_1080",
+            "video_url_720",
+            "video_url_480",
+            "video_url_360",
+            "video_url_240",
+            "trailer_url"
+        ],
+        "thumbnail": [
+            "thumb",
+            "thumbs"
+        ],
+        "description": [
+            "rank_math_description"
+        ],
+        "related": [
+            "duration",
+            "featured_video",
+            "hd_video",
+            "post_views_count",
+            "likes_count",
+            "dislikes_count"
+        ]
+    },
+    "expected_records": 2,
+    "source_environment": {
+        "theme": "retrotube",
+        "parent_theme": "retrotube",
+        "registered_taxonomies": [
+            "category",
+            "post_tag",
+            "post_format",
+            "actors"
+        ]
+    },
+    "warnings": [
+        "Read-only export. No destination storage connection.",
+        "Keyset batches exclude new IDs after start; this is not a cross-request database snapshot. Avoid editing source posts during export.",
+        "Secret-bearing fields are omitted with reasons; secret-like raw content blocks the record without changing it.",
+        "Unknown custom keys are excluded explicitly; review excluded_meta_keys before treating this as a complete backup.",
+        "WordPress-resolved URLs are not fetched or verified."
+    ],
+    "records": [
+        {
+            "site_url": "https://wordpress.example.test",
+            "post_id": 900001,
+            "post_type": "post",
+            "post_status": "publish",
+            "post_date": "2026-11-01 12:00:00",
+            "post_date_gmt": "2026-11-01 05:00:00",
+            "post_modified": "2026-11-02 12:00:00",
+            "post_modified_gmt": "2026-11-02 05:00:00",
+            "post_url": "https://wordpress.example.test/?p=900001",
+            "post_slug": "fixture-1",
+            "author_id": 1,
+            "title": "=ทดสอบ \"CSV\", ภาษาไทย",
+            "content_raw": "<p>ตัวอย่างภาษาไทย \"A,B\"</p>\n[gallery ids=\"1,2\"]<iframe src=\"https://storage.example.test/embed/demo-101?a=1&amp;b=2\"></iframe><iframe src=//storage.example.test/embed/demo-102></iframe>",
+            "excerpt_raw": "คำอธิบาย\nบรรทัดสอง",
+            "description_sources": [
+                {
+                    "source_field": "rank_math_description",
+                    "value_index": 0,
+                    "value": "คำอธิบาย SEO <b>เดิม</b>"
+                }
+            ],
+            "taxonomies": {
+                "actors": [
+                    {
+                        "term_id": 5,
+                        "name": "ชื่อ 5",
+                        "slug": "term-5",
+                        "parent": 0
+                    }
+                ],
+                "category": [
+                    {
+                        "term_id": 1,
+                        "name": "ชื่อ 1",
+                        "slug": "term-1",
+                        "parent": 0
+                    },
+                    {
+                        "term_id": 2,
+                        "name": "ชื่อ 2",
+                        "slug": "term-2",
+                        "parent": 1
+                    }
+                ],
+                "custom_video_tag": [
+                    {
+                        "term_id": 6,
+                        "name": "ชื่อ 6",
+                        "slug": "term-6",
+                        "parent": 0
+                    }
+                ],
+                "post_tag": [
+                    {
+                        "term_id": 3,
+                        "name": "ชื่อ 3",
+                        "slug": "term-3",
+                        "parent": 0
+                    },
+                    {
+                        "term_id": 4,
+                        "name": "ชื่อ 4",
+                        "slug": "term-4",
+                        "parent": 0
+                    }
+                ]
+            },
+            "video_embed_code_raw": [
+                {
+                    "source_field": "embed",
+                    "value_index": 0,
+                    "value": "<iframe title=\"a > b\" src='https://storage.example.test/embed/demo-103?x=1&amp;y=2'></iframe>"
+                },
+                {
+                    "source_field": "embed",
+                    "value_index": 1,
+                    "value": "<iframe src=\"/embed/second-value\"></iframe>"
+                }
+            ],
+            "iframe_sources": [
+                {
+                    "source_field": "post_content",
+                    "index": 0,
+                    "src_raw": "https://storage.example.test/embed/demo-101?a=1&amp;b=2",
+                    "src_decoded": "https://storage.example.test/embed/demo-101?a=1&b=2",
+                    "hostname": "storage.example.test",
+                    "parsed_embed_id": "demo-101",
+                    "id_status": "parsed_only_not_verified_video_id"
+                },
+                {
+                    "source_field": "post_content",
+                    "index": 1,
+                    "src_raw": "//storage.example.test/embed/demo-102",
+                    "src_decoded": "//storage.example.test/embed/demo-102",
+                    "hostname": "storage.example.test",
+                    "parsed_embed_id": "demo-102",
+                    "id_status": "parsed_only_not_verified_video_id"
+                },
+                {
+                    "source_field": "meta:embed:0",
+                    "index": 0,
+                    "src_raw": "https://storage.example.test/embed/demo-103?x=1&amp;y=2",
+                    "src_decoded": "https://storage.example.test/embed/demo-103?x=1&y=2",
+                    "hostname": "storage.example.test",
+                    "parsed_embed_id": "demo-103",
+                    "id_status": "parsed_only_not_verified_video_id"
+                },
+                {
+                    "source_field": "meta:embed:1",
+                    "index": 0,
+                    "src_raw": "/embed/second-value",
+                    "src_decoded": "/embed/second-value",
+                    "hostname": null,
+                    "parsed_embed_id": "second-value",
+                    "id_status": "parsed_only_not_verified_video_id"
+                }
+            ],
+            "video_urls": [
+                {
+                    "source_field": "video_url",
+                    "value_index": 0,
+                    "value": "https://example.test/video.mp4"
+                }
+            ],
+            "custom_thumbnail_urls": [
+                {
+                    "source_field": "thumbs",
+                    "value_index": 0,
+                    "value": [
+                        "https://example.test/a.jpg",
+                        "https://example.test/b.jpg"
+                    ]
+                }
+            ],
+            "custom_fields": {
+                "embed": [
+                    {
+                        "value": "<iframe title=\"a > b\" src='https://storage.example.test/embed/demo-103?x=1&amp;y=2'></iframe>",
+                        "stored_raw": "<iframe title=\"a > b\" src='https://storage.example.test/embed/demo-103?x=1&amp;y=2'></iframe>"
+                    },
+                    {
+                        "value": "<iframe src=\"/embed/second-value\"></iframe>",
+                        "stored_raw": "<iframe src=\"/embed/second-value\"></iframe>"
+                    }
+                ],
+                "thumbs": [
+                    {
+                        "value": [
+                            "https://example.test/a.jpg",
+                            "https://example.test/b.jpg"
+                        ],
+                        "stored_raw": "a:2:{i:0;s:26:\"https://example.test/a.jpg\";i:1;s:26:\"https://example.test/b.jpg\";}"
+                    }
+                ],
+                "rank_math_description": [
+                    {
+                        "value": "คำอธิบาย SEO <b>เดิม</b>",
+                        "stored_raw": "คำอธิบาย SEO <b>เดิม</b>"
+                    }
+                ],
+                "video_url": [
+                    {
+                        "value": "https://example.test/video.mp4",
+                        "stored_raw": "https://example.test/video.mp4"
+                    }
+                ],
+                "duration": [
+                    {
+                        "value": {
+                            "__PHP_Incomplete_Class_Name": "stdClass",
+                            "seconds": 12
+                        },
+                        "stored_raw": "O:8:\"stdClass\":1:{s:7:\"seconds\";i:12;}"
+                    }
+                ]
+            },
+            "exported_meta_keys": [
+                "embed",
+                "thumbs",
+                "rank_math_description",
+                "video_url",
+                "duration"
+            ],
+            "excluded_meta_keys": {
+                "api_token": "credential_key",
+                "unreviewed_field": "not_in_reviewed_field_mapping",
+                "_thumbnail_id": "not_in_reviewed_field_mapping"
+            },
+            "warnings": [
+                "metadata_exclusions_see_excluded_meta_keys"
+            ],
+            "featured_image_id": 990001,
+            "featured_image_url": "http://localhost:8080/wp-content/uploads/2026/11/photo-scaled.jpg",
+            "original_image_url": "http://localhost:8080/wp-content/uploads/2026/11/photo.jpg",
+            "attached_file": "2026/11/photo-scaled.jpg",
+            "filename": "photo-scaled.jpg",
+            "original_filename": "photo.jpg",
+            "mime_type": "image/jpeg",
+            "width": 1200,
+            "height": 800,
+            "alt_text": "alt ไทย",
+            "caption": "caption ไทย",
+            "description": "description ไทย",
+            "image_sizes": [
+                {
+                    "name": "thumbnail",
+                    "url": "http://localhost:8080/wp-content/uploads/2026/11/photo-150x150.jpg",
+                    "width": 150,
+                    "height": 150,
+                    "file": "photo-150x150.jpg",
+                    "mime_type": "image/jpeg"
+                }
+            ],
+            "image_provenance": {
+                "attached_file": "_wp_attached_file",
+                "filename": "derived_basename_of_attached_file",
+                "original_filename": "_wp_attachment_metadata.original_image_only",
+                "dimensions_and_sizes": "_wp_attachment_metadata",
+                "urls": "WordPress_attachment_API_resolved_not_network_verified"
+            }
+        },
+        {
+            "site_url": "https://wordpress.example.test",
+            "post_id": 900002,
+            "post_type": "post",
+            "post_status": "publish",
+            "post_date": "2026-11-01 12:00:00",
+            "post_date_gmt": "2026-11-01 05:00:00",
+            "post_modified": "2026-11-02 12:00:00",
+            "post_modified_gmt": "2026-11-02 05:00:00",
+            "post_url": "https://wordpress.example.test/?p=900002",
+            "post_slug": "fixture-2",
+            "author_id": 1,
+            "title": "ตัวอย่าง 2",
+            "content_raw": "",
+            "excerpt_raw": "",
+            "description_sources": [],
+            "taxonomies": {},
+            "video_embed_code_raw": [],
+            "iframe_sources": [],
+            "video_urls": [],
+            "custom_thumbnail_urls": [],
+            "custom_fields": {},
+            "exported_meta_keys": [],
+            "excluded_meta_keys": {
+                "embed": "credential_value"
+            },
+            "warnings": [
+                "featured_image_missing",
+                "mapped_embed_missing",
+                "mapped_description_missing",
+                "iframe_not_found",
+                "metadata_exclusions_see_excluded_meta_keys"
+            ],
+            "featured_image_id": null,
+            "featured_image_url": null,
+            "original_image_url": null,
+            "attached_file": null,
+            "filename": null,
+            "original_filename": null,
+            "mime_type": null,
+            "width": null,
+            "height": null,
+            "alt_text": null,
+            "caption": null,
+            "description": null,
+            "image_sizes": [],
+            "image_provenance": []
+        }
+    ],
+    "total_records": 2
+}

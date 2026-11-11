@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-12",
+  "base_commit": "56d6e7b5de3d42d655eaff53bcf2f556a4fb49a9",
+  "scope": "Isolated metadata release based on origin/main; unrelated original working changes excluded",
+  "checks": {
+    "api_tests": 60,
+    "exporter_javascript_tests": 5,
+    "api_typecheck": "passed",
+    "admin_typecheck": "passed",
+    "metadata_migration_preservation": "passed against synthetic local PostgreSQL",
+    "credential_pattern_scan": "19 text artifact/source files; no private-key or known access-token patterns found"
+  },
+  "production": {
+    "migration_applied": false,
+    "backup_taken": false,
+    "connection": "Internal Coolify database hostname does not resolve from this workstation (ENOTFOUND); requires server-side access",
+    "deployment_verified": false
+  },
+  "local_browser": "Previously verified on original working checkout; not rerun in release worktree"
+}

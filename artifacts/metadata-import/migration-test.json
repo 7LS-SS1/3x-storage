@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "schema": "metadata_migration_probe_1794421653199",
+  "unchanged": [
+    "Video ID",
+    "publicId",
+    "owner",
+    "title",
+    "description",
+    "category",
+    "storage keys",
+    "VideoFile",
+    "UploadSession and multipart ID",
+    "domain access relations"
+  ],
+  "newTablesEmpty": true
+}

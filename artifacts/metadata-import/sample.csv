@@ -1,0 +1,4 @@
+site_url,post_id,title,description,categories,tags,image_url,target_video_id
+https://wordpress.example.test,101,วิดีโอแนะนำสถานที่ท่องเที่ยว,"คำอธิบายบรรทัดแรก
+บรรทัดที่สอง","[""ท่องเที่ยว"",""ความรู้""]","[""ธรรมชาติ""]",https://images.example.test/travel.jpg,
+https://wordpress.example.test,102,บทเรียนการทำอาหาร,,"[""อาหาร""]",[],,

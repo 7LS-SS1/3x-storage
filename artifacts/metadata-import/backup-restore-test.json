@@ -1,0 +1,126 @@
+{
+  "passed": true,
+  "scope": "local synthetic database only",
+  "tables": [
+    {
+      "table": "AllowedDomain",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "AuditLog",
+      "rows": 27,
+      "sha256": "6fb180c634a5e92655ea3e37b6823f67dea61a000cae769561425d4a1589088f"
+    },
+    {
+      "table": "AuthRateLimit",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "BandwidthDaily",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "Category",
+      "rows": 2,
+      "sha256": "687e60832a53e0570a39748025ce40d513d5cd892f533130fcf5a986a6f894ee"
+    },
+    {
+      "table": "ExternalOAuthState",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "GoogleDriveConnection",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "GoogleDriveImport",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "MetadataChange",
+      "rows": 17,
+      "sha256": "388f2c60cb282eda1a68ba58860398ca064a8928a839a8c604177e9a23f5c4db"
+    },
+    {
+      "table": "MetadataImportBatch",
+      "rows": 23,
+      "sha256": "5df5e71533c7ff32f1886191a7da9ff21e16617472fa93a2d5106eeff588027f"
+    },
+    {
+      "table": "MetadataImportRow",
+      "rows": 27,
+      "sha256": "0791ada369ca5f2aa6c2e418011ff867854e4534866c168a346b884379d12007"
+    },
+    {
+      "table": "PlayEvent",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "PlaybackSession",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "Session",
+      "rows": 8,
+      "sha256": "44f58745d9edc8e00e1842e8fad921114be4c805532fa61c9e1b82481785132c"
+    },
+    {
+      "table": "SystemConfig",
+      "rows": 1,
+      "sha256": "8cf483fd374acad1fd5ecc998496475a581e6027e6776f4881bb0b9485427726"
+    },
+    {
+      "table": "UploadPart",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "UploadSession",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "User",
+      "rows": 6,
+      "sha256": "6c56aaa44f52dcacea16b94e5f7a5af2e7a12d43c52a615183be1a5c86e3c966"
+    },
+    {
+      "table": "Video",
+      "rows": 8,
+      "sha256": "825aa3b84287765d10da22b4f22461409d0ad03a2438a2b6f2d408dc336e096f"
+    },
+    {
+      "table": "VideoAllowedDomain",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "VideoFile",
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "table": "VideoMetadataImage",
+      "rows": 6,
+      "sha256": "b6c14613fa26243c9edcae52701498cded507f22e36d9a27fd8d182fa5484bcb"
+    },
+    {
+      "table": "WordPressMetadataSource",
+      "rows": 16,
+      "sha256": "5b03bd5b2637ccda4ff2f84cdb9c5942711b83522f08b985f828523e2e8570ee"
+    },
+    {
+      "table": "_prisma_migrations",
+      "rows": 8,
+      "sha256": "9fbb930d94b0d0f70cc3b263569c6baa87b6f3301ad10ae54c60af93be17e4c4"
+    }
+  ]
+}

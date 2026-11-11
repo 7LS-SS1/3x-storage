@@ -86,7 +86,8 @@ export function AdminShell({
       ? [
           { href: "/users", label: "ผู้ใช้งาน", icon: Users },
           { href: "/domains", label: "โดเมนที่อนุญาต", icon: ShieldCheck },
-          { href: "/audit", label: "บันทึกกิจกรรม", icon: Activity }
+          { href: "/audit", label: "บันทึกกิจกรรม", icon: Activity },
+          { href: "/metadata-import", label: "นำเข้า Metadata", icon: Tags }
         ]
       : []),
     ...(user.role === "SYSTEM"

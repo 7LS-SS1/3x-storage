@@ -1,0 +1,29 @@
+{
+  "file": "wp-metadata-export-1.0.0.zip",
+  "version": "1.0.0",
+  "size_bytes": 15052,
+  "sha256": "5795bf0001ca953e384c1fb10d77299455e64d154f15ea1a1fdb1421670565e2",
+  "entries": [
+    {
+      "path": "wp-metadata-export/wp-metadata-export.php",
+      "sha256": "5131a18acabfbfa1624bc736d8da91d1c92dbf75b688953881d5f82da5646971"
+    },
+    {
+      "path": "wp-metadata-export/includes/core.php",
+      "sha256": "fe93506b3339c1dece094522e4ec6d3647e7e95249310c1919cd6f81e82d27e7"
+    },
+    {
+      "path": "wp-metadata-export/includes/admin.php",
+      "sha256": "dbc7264fc9c98be6a6378fb30b4dfbd3150644392e3fd5045ff1303c4132e2f9"
+    },
+    {
+      "path": "wp-metadata-export/assets/admin.js",
+      "sha256": "a087b0bc4755e8c5c4df8b00e7ee3c415db9c26a4801f8fcd8a6974871943144"
+    },
+    {
+      "path": "wp-metadata-export/README.md",
+      "sha256": "3f2babf6b3140a62806385c7f627011d5dd3f2dedca4e41c273e01a02d04360f"
+    }
+  ],
+  "checks": "single plugin root; exact runtime allowlist; CRC and source-byte equality; no tests, fixtures, credentials or private exports"
+}

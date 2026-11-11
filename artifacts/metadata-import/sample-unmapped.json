@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "site_url": "https://wordpress.example.test",
+  "records": [
+    {
+      "site_url": "https://wordpress.example.test",
+      "post_id": 101,
+      "title": "วิดีโอแนะนำสถานที่ท่องเที่ยว",
+      "description": "ตัวอย่างคำอธิบายภาษาไทย\nบรรทัดที่สอง",
+      "categories": ["ท่องเที่ยว", "ความรู้"],
+      "tags": ["ธรรมชาติ", "ตัวอย่าง"],
+      "image_url": "https://images.example.test/travel.jpg",
+      "content_raw": "<p>เนื้อหาต้นฉบับ</p>[gallery ids=\"1,2\"]",
+      "video_embed_code_raw": [{ "source_field": "embed", "value_index": 0, "value": "<iframe src=\"https://storage.example.test/embed/parsed-only-demo\"></iframe>" }]
+    },
+    {
+      "site_url": "https://wordpress.example.test",
+      "post_id": 102,
+      "title": "บทเรียนการทำอาหาร",
+      "description": "",
+      "categories": ["อาหาร"],
+      "tags": [],
+      "image_url": ""
+    }
+  ]
+}

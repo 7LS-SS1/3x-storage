@@ -1,0 +1,37 @@
+{
+  "tested_on": "2026-11-11",
+  "timezone": "Asia/Bangkok",
+  "scope": "RetroTube standalone embed metadata export only; no 7M/AURUM Video Core dependency; no 3x-storage mutation",
+  "php_runtime": "8.3.31 in local wp_app Docker container",
+  "php_lint": {"runtime_files": 3, "passed": 3},
+  "javascript_syntax": "passed",
+  "wordpress_mysql_integration": {
+    "assertions_passed": 45,
+    "fixture_storage": "connection-local temporary tables; source tables never used for fixture writes",
+    "generic_fixture_posts": 103,
+    "batches": 3,
+    "successful_records": 102,
+    "intentional_failed_records": 1,
+    "duplicate_record_ids": 0,
+    "source_table_counts_unchanged": true,
+    "normal_plugins_enabled_for_test": ["wp-script-core/wp-script-core.php"]
+  },
+  "ui_unit_tests": {"passed": 5, "failed": 0, "covers": ["review gating", "complete streaming output and counts", "disk write failure", "network failure", "cancellation"]},
+  "local_http_harness": {
+    "anonymous": "administrator_required",
+    "bad_nonce": "invalid_nonce",
+    "authorized_fixture": {"success": true, "records": 2, "failed": 0},
+    "caveat": "Real PHP HTTP and WordPress AJAX hook with temporary data and simulated user context; not browser login or production"
+  },
+  "chrome_browser_fixture": {
+    "passed": true,
+    "rendered_iframes": 0,
+    "javascript_errors": 0,
+    "desktop_width": 1440,
+    "mobile_width": 390,
+    "caveat": "Real PHP-rendered page and admin.js; mocked AJAX and File System Access picker/writes"
+  },
+  "package": "See package-manifest.json for SHA-256 and exact five-file runtime allowlist",
+  "not_verified": ["production installation/activation", "production RetroTube version and custom fields", "production data export", "real WordPress browser login end-to-end", "native folder picker", "very large production datasets"],
+  "import_update_undo_tests": "Not applicable: final user scope excludes importer and destination mutations"
+}

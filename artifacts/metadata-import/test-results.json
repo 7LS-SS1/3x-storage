@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-12",
+  "timezone": "Asia/Bangkok",
+  "scope": "3x-storage metadata importer; synthetic local PostgreSQL and authenticated Next/Nest browser testing",
+  "typecheck": { "api": "passed", "admin": "passed" },
+  "api_unit_regression": { "passed": 50, "includes_new_parser_tests": 10 },
+  "postgresql_http_integration": { "passed": 10, "database": "video_metadata_test", "mocked_database": false, "actual_failure_injection": "PostgreSQL audit trigger raises after Video, sidecar, source and journal writes; all rolled back for that item" },
+  "unique_tests_total": 60,
+  "browser": { "passed": true, "mocked_api": false, "mocked_database": false, "flow": ["anonymous redirect", "real login", "multipart upload", "preview and confirmation", "apply", "reload", "rollback", "STAFF rejection"], "page_errors": 0, "desktop_width": 1440, "mobile_width": 390 },
+  "migration_preservation": "passed; see migration-test.json",
+  "backup_restore": "passed; exact row hashes across 24 tables in isolated test databases; see backup-restore-test.json",
+  "production": { "database_connection_verified": false, "migration_applied": false, "deployed": false, "real_wordpress_import_tested": false },
+  "limits": { "file_bytes": 10485760, "rows_per_file": 500, "rows_per_confirmation": 2, "preview_minutes": 15 },
+  "retained_limitations": ["one target category", "tags and complete original taxonomy retained in raw source", "image URL is metadata only and does not replace R2 poster", "no media download or iframe modification"]
+}
