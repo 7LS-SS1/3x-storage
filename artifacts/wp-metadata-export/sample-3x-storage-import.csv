@@ -1,0 +1,2 @@
+﻿title,หมวดหมู่,videos url,url images
+ตัวอย่างวิดีโอทดสอบ,ทั่วไป,"<iframe src=""https://player.example.test/embed/sample-video"" width=""100%"" height=""100%"" loading=""lazy"" allow=""autoplay; fullscreen; picture-in-picture"" allowfullscreen></iframe>",https://example.test/cover.jpg

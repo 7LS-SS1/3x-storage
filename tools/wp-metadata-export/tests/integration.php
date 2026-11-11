@@ -88,9 +88,21 @@ $encoded=WPMB_Export::json($document);$decoded=json_decode($encoded,true,512,JSO
 expect($decoded['records'][0]['content_raw']===$body && $decoded['records'][0]['video_embed_code_raw'][0]['value']===$embed,'JSON roundtrip exact raw fields');
 expect(!str_contains($encoded,'DO-NOT-EXPORT')&&!str_contains($encoded,'NEVER-EXPORT'),'no fixture credentials exported');
 $again=WPMB_Admin::batch($start['cursor']);expect(WPMB_Export::json($again['records'])===WPMB_Export::json(array_slice($records,0,49)),'repeating batch deterministic read-only');
-$one=WPMB_Admin::start($input+['post_ids'=>'900001,900001,999999']);expect($one['expected_records']===1 && count($one['skipped'])===1,'duplicate input IDs normalized missing ID reported');
+$one=WPMB_Admin::start(array_replace($input,['scope'=>'ids','post_ids'=>'900001,900001,999999']));expect($one['expected_records']===1 && count($one['skipped'])===1,'duplicate input IDs normalized missing ID reported');
 try { WPMB_Admin::filters($input+['date_from'=>'2026-02-30']);expect(false,'bad date'); }catch(RuntimeException $e){expect($e->getMessage()==='invalid_date','invalid calendar date rejected');}
 $reversed=$input+['date_from'=>'2026-11-30','date_to'=>'2026-11-01'];try{WPMB_Admin::filters($reversed);expect(false,'reversed dates');}catch(RuntimeException $e){expect($e->getMessage()==='reversed_date_range','reversed date range rejected');}
+$all=WPMB_Admin::start($input+['post_ids'=>'900001']);
+expect($all['expected_records']===103 && $all['header']['filters']['post_ids']===[], 'all ignores stale post IDs');
+foreach (['draft','private','trash','auto-draft','future','pending'] as $offset=>$status) {
+    $wpdb->update($wpdb->posts,['post_status'=>$status],['ID'=>900010+$offset]);
+}
+$every=WPMB_Admin::start(array_replace($input,['post_status'=>'all']));
+expect($every['expected_records']===103,'all statuses includes drafts private trash and scheduled');
+expect(WPMB_Admin::start($input)['expected_records']===97,'explicit publish filter still applies');
+$seen=[];$cursor=$every['cursor'];$failureCount=0;
+do { $part=WPMB_Admin::batch($cursor); $cursor=$part['cursor']; $seen=array_merge($seen,array_column($part['records'],'post_id')); $failureCount+=count($part['failed']); } while (!$part['done']);
+expect(count($seen)===102 && count(array_unique($seen))===102 && $failureCount===1,'all status batches complete without duplicates and account for failure');
+expect(WPMB_Admin::start(array_replace($input,['post_status'=>'all','date_from'=>'2026-12-01']))['expected_records']===0,'all retains explicit date filter');
 // Simulated database failure must abort request, not falsely return an empty success.
 $posts=$wpdb->posts; $wpdb->posts='wpmb_nonexistent_fixture_table';$wpdb->suppress_errors(true);
 try{WPMB_Admin::batch($start['cursor']);expect(false,'DB failure');}catch(RuntimeException $e){expect($e->getMessage()==='database_read_failed','database failure surfaced');}finally{$wpdb->posts=$posts;$wpdb->suppress_errors(false);}

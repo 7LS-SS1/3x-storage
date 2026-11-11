@@ -13,7 +13,7 @@ final class WPMB_Admin {
     public static function filters($input) {
         $type = $input['post_type'] ?? 'post'; $status = $input['post_status'] ?? 'publish';
         if (!is_string($type) || !in_array($type, get_post_types(['show_ui' => true]), true) || $type === 'attachment') { throw new RuntimeException('invalid_post_type'); }
-        if (!is_string($status) || !in_array($status, get_post_stati(), true)) { throw new RuntimeException('invalid_status'); }
+        if (!is_string($status) || ($status !== 'all' && !in_array($status, get_post_stati(), true))) { throw new RuntimeException('invalid_status'); }
         $basis = $input['date_basis'] ?? 'post_date';
         if (!in_array($basis, ['post_date', 'post_modified'], true)) { throw new RuntimeException('invalid_date_basis'); }
         $dates = [];
@@ -27,7 +27,8 @@ final class WPMB_Admin {
             $dates[$k] = $v;
         }
         if ($dates['date_from'] && $dates['date_to'] && $dates['date_from'] > $dates['date_to']) { throw new RuntimeException('reversed_date_range'); }
-        $ids = trim((string)($input['post_ids'] ?? ''));
+        // All means all matching posts, regardless of IDs left in the form.
+        $ids = ($input['scope'] ?? '') === 'all' ? '' : trim((string)($input['post_ids'] ?? ''));
         if ($ids !== '' && !preg_match('/^\d+(?:[\s,]+\d+)*$/D', $ids)) { throw new RuntimeException('invalid_post_ids'); }
         $ids = $ids === '' ? [] : array_values(array_unique(array_map('intval', preg_split('/[\s,]+/', $ids))));
         if (count($ids) > 200 || in_array(0, $ids, true)) { throw new RuntimeException('post_ids_must_be_positive_max_200'); }
@@ -36,7 +37,8 @@ final class WPMB_Admin {
     }
     public static function where($f) {
         global $wpdb;
-        $sql = $wpdb->prepare('post_type=%s AND post_status=%s', $f['post_type'], $f['post_status']);
+        $sql = $wpdb->prepare('post_type=%s', $f['post_type']);
+        if ($f['post_status'] !== 'all') { $sql .= $wpdb->prepare(' AND post_status=%s', $f['post_status']); }
         if ($f['post_ids']) { $sql .= ' AND ID IN (' . implode(',', array_map('intval', $f['post_ids'])) . ')'; }
         if ($f['date_from']) { $sql .= $wpdb->prepare(" AND {$f['date_basis']} >= %s", $f['date_from'] . ' 00:00:00'); }
         if ($f['date_to']) { $sql .= $wpdb->prepare(" AND {$f['date_basis']} <= %s", $f['date_to'] . ' 23:59:59'); }
@@ -114,9 +116,9 @@ final class WPMB_Admin {
         <p>เริ่มจาก Post ID 1–2 รายการ ตรวจตัวอย่าง แล้วจึง export ทั้งหมด ใช้ Chrome/Edge ผ่าน HTTPS หรือ localhost เพื่อเขียนไฟล์ลงเครื่องเป็น batch โดยไม่เก็บไฟล์บนเว็บเซิร์ฟเวอร์</p>
         <form id="wpmb-form"><table class="form-table"><tbody>
         <tr><th>Post type</th><td><select name="post_type"><?php foreach (get_post_types(['show_ui'=>true]) as $type) { if ($type === 'attachment') { continue; } echo '<option '.selected($type, 'post', false).' value="'.esc_attr($type).'">'.esc_html($type).'</option>'; } ?></select></td></tr>
-        <tr><th>สถานะ</th><td><select name="post_status"><?php foreach (get_post_stati() as $status) { echo '<option '.selected($status,'publish',false).' value="'.esc_attr($status).'">'.esc_html($status).'</option>'; } ?></select></td></tr>
-        <tr><th>ช่วงวันที่ (รวมวันสุดท้าย)</th><td><select name="date_basis"><option value="post_date">วันที่เผยแพร่</option><option value="post_modified">วันที่แก้ไข</option></select> <input name="date_from" type="date"> ถึง <input name="date_to" type="date"><p>เขตเวลา WordPress: <?php echo esc_html(wp_timezone_string()); ?> (วันที่ในตาราง posts ของเว็บไซต์)</p></td></tr>
-        <tr><th>ขอบเขต</th><td><label><input type="radio" name="scope" value="ids" checked> ระบุ Post ID</label> <input name="post_ids" placeholder="101, 102" aria-label="Post IDs"><br><label><input type="radio" name="scope" value="all"> ทั้งหมดตามตัวกรอง (ล้าง Post ID ก่อน)</label></td></tr>
+        <tr><th>สถานะ</th><td><select name="post_status"><option value="all">ทุกสถานะ (รวมร่าง ส่วนตัว ถังขยะ และร่างอัตโนมัติ)</option><?php foreach (get_post_stati() as $status) { echo '<option value="'.esc_attr($status).'">'.esc_html($status).'</option>'; } ?></select></td></tr>
+        <tr><th>ช่วงวันที่ (รวมวันสุดท้าย)</th><td><select name="date_basis"><option value="post_date">วันที่เผยแพร่</option><option value="post_modified">วันที่แก้ไข</option></select> <input name="date_from" type="date"> ถึง <input name="date_to" type="date"><p>เขตเวลา WordPress: <?php echo esc_html(wp_timezone_string()); ?> (วันที่ในตาราง posts ของเว็บไซต์) • เว้นช่วงวันที่ว่างเพื่อส่งออกทุกวัน</p></td></tr>
+        <tr><th>ขอบเขต</th><td><label><input type="radio" name="scope" value="ids"> ระบุ Post ID</label> <input name="post_ids" placeholder="101, 102" aria-label="Post IDs"><br><label><input type="radio" name="scope" value="all" checked> บทความทั้งหมดตามตัวกรอง (ไม่ใช้ Post ID ที่กรอกค้างไว้)</label></td></tr>
         </tbody></table><button type="button" id="wpmb-preview" class="button">ตรวจตัวอย่าง 1–2 รายการ</button> <button type="button" id="wpmb-download" class="button button-primary" disabled>ยืนยันและบันทึก JSON + CSV</button> <button type="button" id="wpmb-cancel" class="button" disabled>หยุด</button></form>
         <p>iframe แสดงเป็นข้อความเท่านั้น ไม่ render หรือเล่นวิดีโอ ค่าหลัง /embed/ เป็นค่าที่ parse ได้ ยังไม่ใช่ Video ID ที่ยืนยันแล้ว</p>
         <p>JSON เก็บต้นฉบับและทุก taxonomy ส่วน CSV เป็นสรุป ฟิลด์ที่ไม่อยู่ใน mapping จะมีเหตุผลใน excluded_meta_keys หากพบข้อมูลรับรองจะตัดฟิลด์หรือปฏิเสธรายการนั้นโดยไม่แก้ต้นฉบับ</p>

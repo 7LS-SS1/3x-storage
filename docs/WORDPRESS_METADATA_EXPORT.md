@@ -1,3 +1,25 @@
+# Release 1.1.0 — 2026-11-12
+
+User expanded scope: export all matching WordPress posts and import the CSV exported by 3x-storage to update RetroTube embed by exact title.
+
+- Export all ignores leftover Post IDs; all-status option includes draft/private/trash/auto-draft/scheduled. Dates and selected post type still apply. Streams 50 records per batch; no total export row cap. Credential-bearing records remain explicitly failed, never silently omitted.
+- Separate Tools → 3x-storage Embed Import accepts the actual app columns `title,หมวดหมู่,videos url,url images` (apps/admin/components/video-export.ts). Only `embed` is updated; category/image columns are ignored. Title equality is binary/exact, with reversal of the app's CSV formula protection only. Duplicate file/site titles are blocked.
+- Administrator capability + nonce, per-post permission, signed user-bound preview, explicit per-row confirmation, escaped iframe text, iframe validation, stale-value check, InnoDB transaction for embed+audit. Replay is idempotent. Before/after, actor, UTC and batch ID persist in private post meta. Latest 50 audits show after reload; rollback checks current value before restoring.
+- No schema migration. Import deliberately writes WordPress embed and audit only. Source post content/title/image and 3x-storage IDs/media/permissions stay unchanged. Back up metadata, then canary 1–2 posts before larger import. Deactivation stops new imports; rollback existing edits through history before uninstall if needed. Audit remains after uninstall. Worker drain N/A: no workers or media jobs.
+- Import currently accepts CSV only, at most 2,000 rows / 10 MiB and PHP upload limits. Preview is synchronous and may need smaller files on slow hosting. Export JSON remains a full metadata backup, not the input format for embed updates. Export-all JSON may exceed separate 3x-storage import limits; this release does not change app limits.
+
+## Verified locally for 1.1.0
+
+- WordPress + MySQL export integration: **50 assertions**, 103 synthetic posts, 3 batches, 102 successful + 1 intentional credential failure, exact content, unique IDs, all-status and leftover-ID regressions.
+- WordPress + MySQL import integration: **19 assertions** in isolated InnoDB fixture tables removed afterward. Exact Thai/quoted titles, duplicates/missing, apply, replay/reimport, stale preview, injected audit-write failure rollback, restore absent/existing embed, unsafe iframe/tampered token/anonymous rejection, content unchanged, escaped persistent history.
+- Export UI: **5 unit tests** pass (streamed output, review gating, disk/network/cancel errors).
+- Import browser fixture: actual PHP-rendered markup and JS with mocked API; confirmation cancellation does not apply, approval and rollback work, duplicate blocked, no iframe/script rendering or JS errors. Desktop/mobile screenshots supplied. This is not a production login/browser test.
+- ZIP allowlist, CRC and every packaged byte verified against source.
+
+Not yet verified: production install/export/import, real 3x-storage CSV uploaded through a production WordPress login, native folder picker, hosting-specific limits, and actual playback after changing an embed. Production source was not modified by these tests.
+
+## Historical 1.0.0 evidence (read-only exporter scope at that time)
+
 # RetroTube metadata export — delivery and evidence
 
 วันที่ตรวจ: 11 พฤศจิกายน 2026 (Asia/Bangkok)

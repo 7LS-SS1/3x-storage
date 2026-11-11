@@ -1,0 +1,20 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'../../..'),out=path.join(root,'artifacts/wp-metadata-export');
+const pkg=fs.readdirSync(path.join(root,'node_modules/.pnpm')).find(n=>/^playwright@/.test(n));
+const {chromium}=require(path.join(root,'node_modules/.pnpm',pkg,'node_modules/playwright'));
+(async()=>{const browser=await chromium.launch({channel:'chrome',headless:true});try{
+ const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const html=fs.readFileSync(path.join(out,'import-preview.html'),'utf8').replace(/data-token="[^"]*"/g,'data-token="fixture-undo"');
+ await page.setContent(html);await page.evaluate(()=>{window.WPMBI={url:'https://fixture.test/ajax',nonce:'fixture'};window.calls=[];window.fetch=async(_url,{body})=>{const op=body.get('operation');window.calls.push(op);return {ok:true,json:async()=>({success:true,data:op==='preview'?{batch_id:'synthetic',total:2,rows:[{row:1,title:'ตัวอย่าง <script> ไทย',post_id:101,status:'ready',before:'<iframe src="https://old.example.test/embed/old"></iframe>',after:'<iframe src="https://new.example.test/embed/new"></iframe>',token:'fixture-apply'},{row:2,title:'ชื่อซ้ำ',status:'blocked',reason:'duplicate_title_in_wordpress',after:'<iframe></iframe>'}]}:op==='apply'?{status:'applied',undo_token:'fixture-undo'}:{status:'rolled_back'}})};};});
+ await page.addScriptTag({path:path.join(__dirname,'../assets/import.js')});
+ await page.locator('#wpmb-import-file').setInputFiles({name:'3x.csv',mimeType:'text/csv',buffer:Buffer.from('title,หมวดหมู่,videos url,url images')});
+ await page.click('#wpmb-import-preview');await page.getByRole('button',{name:'ยืนยันแก้ embed รายการนี้',exact:true}).waitFor();
+ assert.equal(await page.locator('iframe').count(),0);assert.equal(await page.locator('#wpmb-import-rows script').count(),0);
+ assert.equal(await page.getByRole('button',{name:'ยืนยันแก้ embed รายการนี้',exact:true}).count(),1);
+ page.once('dialog',d=>d.dismiss());await page.getByRole('button',{name:'ยืนยันแก้ embed รายการนี้',exact:true}).click();assert.deepEqual(await page.evaluate(()=>window.calls),['preview']);
+ page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'ยืนยันแก้ embed รายการนี้',exact:true}).click();await page.getByText('บันทึกสำเร็จ',{exact:true}).waitFor();
+ await page.screenshot({path:path.join(out,'import-review-desktop.png'),fullPage:true});
+ page.once('dialog',d=>d.accept());await page.locator('#wpmb-import-rows').getByRole('button',{name:'ย้อนคืน embed เดิม'}).click();await page.getByText('ย้อนคืนสำเร็จ',{exact:true}).waitFor();
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'import-review-mobile.png'),fullPage:true});assert.deepEqual(errors,[]);
+ console.log('WPMB_IMPORT_BROWSER_OK real rendered page and JS; mock API; escaped HTML, duplicate blocked, confirmation cancel/apply, rollback, desktop/mobile');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
