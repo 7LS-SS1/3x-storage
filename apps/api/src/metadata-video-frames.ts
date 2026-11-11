@@ -75,7 +75,7 @@ export function runMediaTool(command: string, args: string[], signal: AbortSigna
 export class MetadataVideoFrames {
   constructor(private readonly storage: StorageService) {}
 
-  private async read<T>(key: string, work: (url: string, signal: AbortSignal) => Promise<T>): Promise<T> {
+  private async read<T>(key: string, work: (url: string, signal: AbortSignal) => Promise<T>, etag?: string): Promise<T> {
     const abort = new AbortController();
     const timeout = setTimeout(() => abort.abort(), 20_000);
     let used = 0, requests = 0;
@@ -95,7 +95,7 @@ export class MetadataVideoFrames {
       res.on("close", cancel);
       let stream: Readable | undefined;
       try {
-        const object = await this.storage.readRange(key, `bytes=${start}-${end}`, requestAbort.signal);
+        const object = await this.storage.readRange(key, `bytes=${start}-${end}`, requestAbort.signal, etag);
         if (!object.ContentRange || !object.Body) throw new Error("Range response required");
         res.writeHead(206, { "Content-Range": object.ContentRange, "Content-Length": String(object.ContentLength), "Accept-Ranges": "bytes", "Content-Type": "application/octet-stream" });
         stream = object.Body as Readable;
@@ -116,19 +116,19 @@ export class MetadataVideoFrames {
     } finally { clearTimeout(timeout); abort.abort(); server.closeAllConnections(); server.close(); }
   }
 
-  async duration(key: string) {
+  async duration(key: string, etag?: string) {
     return this.read(key, async (url, signal) => {
       const bytes = await runMediaTool(process.env.FFPROBE_PATH || "ffprobe", [...INPUT_OPTIONS, "-show_entries", "format=duration", "-of", "json", url], signal);
       const duration = Number(JSON.parse(bytes.toString()).format?.duration);
       sampleTimes(duration, 2);
       return duration;
-    });
+    }, etag);
   }
 
-  async frame(key: string, time: number) {
+  async frame(key: string, time: number, etag?: string) {
     return this.read(key, async (url, signal) => {
       const bytes = await runMediaTool(process.env.FFMPEG_PATH || "ffmpeg", [...INPUT_OPTIONS, "-threads", "1", "-ss", String(time), "-i", url, "-map", "0:v:0", "-frames:v", "1", "-an", "-sn", "-dn", "-vf", "scale=320:320:force_original_aspect_ratio=decrease", "-threads", "1", "-filter_threads", "1", "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "3", "pipe:1"], signal);
       return fingerprintCover(bytes);
-    });
+    }, etag);
   }
 }

@@ -1,32 +1,31 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({ states: [] as any[], effects: [] as any[], deps: [] as any[], request: vi.fn() }));
 vi.mock("react", () => ({ useRef: (current: unknown) => ({ current }), useEffect: (fn: unknown, deps: unknown) => { h.effects.push(fn); h.deps.push(deps); }, useState: (initial: unknown) => { const i = h.states.push(initial) - 1; return [initial, (v: any) => { h.states[i] = typeof v === "function" ? v(h.states[i]) : v; }]; } }));
-vi.mock("@/lib/api-client", () => ({ apiRequest: h.request, ApiRequestError: class extends Error { status = 400; retryAfterMs = 0; } }));
-import { mergeVideoMatches, useMetadataVideoScan } from "./metadata-video-scan";
-beforeEach(() => { h.states = []; h.effects = []; h.deps = []; h.request.mockReset(); });
-const step = (score = 80, id = "v1") => ({ scanId: "scan", done: true, loaded: 30, sourceTotal: 30, scanned: 1, total: 1, frames: 12, failed: 0, current: null, failure: null, sources: [], matches: [{ rowId: "row-29", score, panel: "ช่อง 2/3 จากซ้าย" }], frame: { id, publicId: id, title: "Generic fixture", seconds: 12.3, thumbnail: "data:image/jpeg;base64,fixture" } });
-it("retains the best timestamp per video and only the best five candidates without granting exact-cover approval", () => {
-  let result = mergeVideoMatches({}, step(85));
-  result = mergeVideoMatches(result, step(70)); expect(result["row-29"]!.candidates[0]!.cover?.score).toBe(85);
-  for (let i = 2; i < 9; i++) result = mergeVideoMatches(result, step(80 + i, `v${i}`));
-  expect(result["row-29"]!.candidates).toHaveLength(5);
-  expect(result["row-29"]!.candidates[0]!.frame?.seconds).toBe(12.3);
-  expect(result["row-29"]!.candidates.every(c => !c.cover?.exact)).toBe(true);
-  expect(result["row-29"]!.autoStatus).toBeUndefined();
+vi.mock("@/lib/api-client", () => ({ apiRequest: h.request }));
+import { useMetadataVideoScan } from "./metadata-video-scan";
+beforeEach(() => { vi.useFakeTimers(); h.states = []; h.effects = []; h.deps = []; h.request.mockReset(); });
+afterEach(()=>{vi.clearAllTimers();vi.useRealTimers();});
+const response={job:{id:"job",status:"RUNNING"},rows:[{rowId:"row-29",candidates:[{id:"video",cover:{exact:false,score:100}}]}]};
+it("only reads the persisted job on mount and leaves it running on unmount", async()=>{
+  h.request.mockResolvedValue(response);
+  useMetadataVideoScan("batch",2);h.effects[0](); const cleanup=h.effects[1]();
+  await Promise.resolve();
+  expect(h.request.mock.calls[0]![0]).toBe("/metadata-import/batches/batch/video-job?page=2");
+  expect(h.states[1]["row-29"].candidates[0].cover.exact).toBe(false);
+  cleanup();await vi.advanceTimersByTimeAsync(30000);
+  expect(h.request).toHaveBeenCalledTimes(1);
+  expect(h.request.mock.calls[0]![1].signal.aborted).toBe(true);
 });
-it("starts only on request and never sends apply requests for even a 100-point frame match", async () => {
-  const scan = useMetadataVideoScan("batch"); h.effects[0](); expect(h.request).not.toHaveBeenCalled();
-  h.request.mockResolvedValueOnce(step(100)).mockResolvedValueOnce({ stopped: true });
-  await scan.start(70, 60);
-  expect(h.request.mock.calls.map(c => c[0])).toEqual(["/metadata-import/batches/batch/video-scan", "/metadata-import/batches/batch/video-scan/scan/stop"]);
-  expect(JSON.parse(h.request.mock.calls[0]![1].body)).toEqual({ threshold: 70, samples: 60 });
-  expect(h.states[0].done).toBe(true); expect(h.states[1]["row-29"].autoStatus).toBeUndefined();
-  expect(h.deps[0]).toEqual(["batch"]);
+it("sends explicit start/pause/resume only, never automatic metadata writes", async()=>{
+  h.request.mockResolvedValue({jobId:"job"});
+  const scan=useMetadataVideoScan("batch");
+  await scan.start(70,12); await scan.control("pause"); await scan.control("resume");
+  expect(h.request.mock.calls.map(c=>c[0])).toEqual(["/metadata-import/batches/batch/video-job","/metadata-import/batches/batch/video-job/pause","/metadata-import/batches/batch/video-job/resume"]);
+  expect(JSON.parse(h.request.mock.calls[0]![1].body)).toEqual({threshold:70,samples:12,restart:false});
 });
-it("stops after the in-flight frame, preserves results and does not request the next step", async () => {
-  const scan = useMetadataVideoScan("batch");
-  h.request.mockImplementationOnce(async () => { scan.stop(); return { ...step(), done: false }; }).mockResolvedValueOnce({ stopped: true });
-  await scan.start(80, 30);
-  expect(h.request).toHaveBeenCalledTimes(2); expect(h.states[0].running).toBe(false); expect(h.states[0].done).toBe(false);
-  expect(h.states[1]["row-29"].candidates).toHaveLength(1);
+it("ignores a late GET after leaving the batch",async()=>{
+  let resolve!: (value:unknown)=>void; h.request.mockImplementation(()=>new Promise(r=>{resolve=r;}));
+  useMetadataVideoScan("batch");h.effects[0](); const cleanup=h.effects[1]();cleanup();
+  resolve(response); await Promise.resolve();
+  expect(h.states[0]).toBeNull();expect(h.states[1]).toEqual({});
 });

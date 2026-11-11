@@ -3,6 +3,16 @@ import { StorageService } from "./storage.service";
 
 afterEach(() => vi.unstubAllEnvs());
 
+it("reads object identity and pins every frame range to that ETag", async () => {
+  const send = vi.fn().mockResolvedValueOnce({ ETag: '"version-1"', ContentLength: 100 }).mockResolvedValueOnce({ Body: "fixture" });
+  const service = new StorageService();
+  (service as any).configuration = { bucket: "fixture", endpoint: "https://storage.example.test" };
+  (service as any).client = { send };
+  expect(await service.objectVersion("selected-key")).toEqual({ etag: '"version-1"', size: 100, bucket: "fixture", endpoint: "https://storage.example.test" });
+  await service.readRange("selected-key", "bytes=0-99", new AbortController().signal, '"version-1"');
+  expect(send.mock.calls[1]![0].input).toEqual({ Bucket: "fixture", Key: "selected-key", Range: "bytes=0-99", IfMatch: '"version-1"' });
+});
+
 describe("browser multipart signing", () => {
   it("does not sign an empty-body checksum before the browser supplies the part", async () => {
     vi.stubEnv("STORAGE_DRIVER", "r2");

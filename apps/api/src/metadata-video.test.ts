@@ -93,9 +93,9 @@ describe("video frame discovery", () => {
       expect((await fetch(url, { headers: { Range: "bytes=0-2,4-5" } })).status).toBe(416);
       const result = await fetch(url, { headers: { Range: "bytes=2-4" } });
       expect(result.status).toBe(206); expect(await result.text()).toBe("cde");
-    });
+    }, '"object-version"');
     expect(readRange).toHaveBeenCalledTimes(1);
-    expect(readRange).toHaveBeenCalledWith("db-selected-key", "bytes=2-4", expect.any(AbortSignal));
+    expect(readRange).toHaveBeenCalledWith("db-selected-key", "bytes=2-4", expect.any(AbortSignal), '"object-version"');
   });
   it("cuts off a storage stream that exceeds the per-frame read budget", async () => {
     const reader = new MetadataVideoFrames({ readRange: vi.fn(async () => ({ ContentRange: "bytes 0-68157439/68157440", ContentLength: 68157440, Body: Readable.from([Buffer.alloc(65 * 1024 * 1024)]) })) } as never);

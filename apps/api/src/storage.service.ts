@@ -242,9 +242,16 @@ export class StorageService {
   }
 
   // Internal frame scanner only: the caller selects this key from Video/VideoFile.
-  async readRange(storageKey: string, range: string, signal: AbortSignal) {
+  async readRange(storageKey: string, range: string, signal: AbortSignal, etag?: string) {
     const config = this.config();
-    return this.s3().send(new GetObjectCommand({ Bucket: config.bucket, Key: storageKey, Range: range }), { abortSignal: signal });
+    return this.s3().send(new GetObjectCommand({ Bucket: config.bucket, Key: storageKey, Range: range, IfMatch: etag }), { abortSignal: signal });
+  }
+
+  async objectVersion(storageKey: string) {
+    const config = this.config();
+    const object = await this.s3().send(new HeadObjectCommand({ Bucket: config.bucket, Key: storageKey }), { abortSignal: AbortSignal.timeout(10_000) });
+    if (!object.ETag || !object.ContentLength) throw new Error("ไม่พบเวอร์ชันไฟล์วิดีโอที่ใช้ตรวจได้");
+    return { etag: object.ETag, size: object.ContentLength, bucket: config.bucket, endpoint: config.endpoint };
   }
 
   async putObject(storageKey: string, body: Buffer, contentType: string) {

@@ -155,6 +155,31 @@ services:
     logging: *app-logging
     stop_grace_period: 30s
 
+  metadata-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: metadata-worker
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<:
+        - *database-environment
+        - *r2-public-environment
+        - *r2-private-environment
+      NODE_ENV: production
+      METADATA_VIDEO_CONCURRENCY: ${METADATA_VIDEO_CONCURRENCY:-2}
+      METADATA_FRAME_CACHE_LIMIT: ${METADATA_FRAME_CACHE_LIMIT:-100000}
+    cpus: 2
+    mem_limit: 1g
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    <<: *app-security
+    logging: *app-logging
+    stop_grace_period: 45s
+
   worker:
     build:
       context: .

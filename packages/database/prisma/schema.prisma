@@ -390,6 +390,82 @@ model MetadataImportBatch {
   headerJson  Json
   createdAt   DateTime @default(now())
   rows        MetadataImportRow[]
+  videoJobs   MetadataVideoJob[]
+}
+
+// Durable, read-only media discovery. No relation changes to Video or VideoFile.
+model MetadataVideoJob {
+  id          String @id @default(cuid())
+  batchId     String
+  batch       MetadataImportBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  actorUserId String
+  threshold   Int
+  samples     Int
+  status      String @default("RUNNING")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tasks       MetadataVideoTask[]
+  matches     MetadataVideoMatch[]
+  @@unique([batchId, actorUserId])
+}
+
+model MetadataVideoTask {
+  id          String @id @default(cuid())
+  jobId       String
+  job         MetadataVideoJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  kind        String
+  refId       String
+  status      String @default("PENDING")
+  dataJson    Json @default("{}")
+  objectIdentity String?
+  framesDone  Int @default(0)
+  cacheHits   Int @default(0)
+  attempts    Int @default(0)
+  error       String?
+  leaseToken  String?
+  leaseUntil  DateTime?
+  runAfter    DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@unique([jobId, kind, refId])
+  @@index([status, runAfter, leaseUntil])
+}
+
+model MetadataVideoMatch {
+  id          String @id @default(cuid())
+  jobId       String
+  job         MetadataVideoJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  rowId       String
+  videoId     String
+  score       Float
+  seconds     Float
+  panel       String
+  thumbnail   String
+  @@unique([jobId, rowId, videoId])
+  @@index([jobId, rowId, score])
+}
+
+model MetadataVideoIndex {
+  id          String @id
+  videoId     String
+  duration    Float?
+  leaseToken  String?
+  leaseUntil  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  frames      MetadataVideoFrame[]
+  @@index([videoId])
+}
+
+model MetadataVideoFrame {
+  id          String @id
+  identity    String
+  index       MetadataVideoIndex @relation(fields: [identity], references: [id], onDelete: Cascade)
+  timeMs      Int
+  imageJson   Json
+  lastUsedAt  DateTime @default(now())
+  @@unique([identity, timeMs])
+  @@index([lastUsedAt])
 }
 
 model MetadataImportRow {

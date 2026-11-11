@@ -24,6 +24,7 @@ import { MetadataCoverController, MetadataCoverService } from "./metadata-cover.
 import { MetadataCoverImages } from "./metadata-cover-image";
 import { MetadataVideoController, MetadataVideoService } from "./metadata-video.service";
 import { MetadataVideoFrames } from "./metadata-video-frames";
+import { MetadataVideoJobs, MetadataVideoJobsController } from "./metadata-video-jobs.service";
 
 @Module({
   imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }])],
@@ -41,7 +42,8 @@ import { MetadataVideoFrames } from "./metadata-video-frames";
     GoogleDriveController,
     MetadataImportController,
     MetadataCoverController,
-    MetadataVideoController
+    MetadataVideoController,
+    MetadataVideoJobsController
   ],
   providers: [
     PrismaService,
@@ -57,6 +59,7 @@ import { MetadataVideoFrames } from "./metadata-video-frames";
     MetadataCoverImages,
     MetadataVideoService,
     MetadataVideoFrames,
+    MetadataVideoJobs,
     { provide: APP_GUARD, useClass: ThrottlerGuard }
   ]
 })

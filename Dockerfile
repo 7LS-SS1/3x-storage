@@ -95,6 +95,12 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=5 \
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "dist/main.js"]
 
+# Separate media-discovery process; never consumes the transcoding queue.
+FROM api AS metadata-worker
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "try{if(Date.now()-Number(require('fs').readFileSync('/tmp/metadata-video-heartbeat','utf8'))>45000)process.exit(1)}catch{process.exit(1)}"
+CMD ["node", "dist/metadata-video-worker.js"]
+
 FROM node:${NODE_VERSION}-trixie-slim AS worker
 ENV NODE_ENV=production
 RUN apt-get update \
