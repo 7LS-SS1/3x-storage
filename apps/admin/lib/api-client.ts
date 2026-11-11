@@ -74,13 +74,13 @@ export async function apiRequest<T>(
       window.location.assign("/login");
     }
     const apiError = payload?.error;
-    const message = typeof apiError === "object"
+    // Nest returns a generic error label alongside its actionable message.
+    const detail = Array.isArray(payload?.message)
+      ? payload.message.filter(value => typeof value === "string" && value.trim()).join(", ")
+      : typeof payload?.message === "string" ? payload.message.trim() : "";
+    const message = detail || (typeof apiError === "object"
       ? apiError?.message
-      : typeof apiError === "string"
-        ? apiError
-        : Array.isArray(payload?.message)
-          ? payload.message.join(", ")
-          : payload?.message;
+      : typeof apiError === "string" ? apiError : undefined);
     const retryAfter = response.headers.get("Retry-After");
     const seconds = retryAfter === null ? NaN : Number(retryAfter);
     const retryAfterMs = Number.isFinite(seconds)
