@@ -153,6 +153,42 @@ describe.skipIf(!db)("Metadata import PostgreSQL + authenticated HTTP", () => {
     const empty = await service.stage(actor, { originalname: "no-references.json", buffer: Buffer.from(JSON.stringify([input(91, { title: before.title, filename: name, parsed_embed_id: before.publicId })])) });
     expect((await service.candidates((await service.batch(empty.id, 1)).rows[0]!.id)).candidates).toEqual([]);
   });
+  it("returns discovered candidates directly with each paginated batch row without writes", async () => {
+    const batch = await service.stage(actor, { originalname: "batch-review.json", buffer: Buffer.from(JSON.stringify(Array.from({ length: 26 }, (_, i) => input(200 + i, { target_video_id: video2 })))) });
+    const before = await prisma.metadataChange.count();
+    const first = await http(`/batches/${batch.id}/review?page=1`); expect(first.status).toBe(200);
+    const page1 = await first.json(); expect(page1.rows).toHaveLength(25); expect(page1.total).toBe(26);
+    expect(page1.rows[0].discovery.candidates.map((v: { id: string }) => v.id)).toEqual([video2]);
+    const page2 = await service.reviewBatch(batch.id, 2); expect(page2.rows).toHaveLength(1); expect(page2.rows[0]?.ordinal).toBe(26);
+    expect(await prisma.metadataChange.count()).toBe(before);
+    expect(await prisma.metadataImportRow.count({ where: { batchId: batch.id, previewToken: { not: null } } })).toBe(0);
+    expect((await http(`/batches/${batch.id}/review`, "GET", undefined, { cookie: `video_session=${staffSession}` })).status).toBe(403);
+  });
+  it("requires content approval and imports only staged title/description without accepting browser overrides", async () => {
+    const batch = await service.stage(actor, { originalname: "text-approval.json", buffer: Buffer.from(JSON.stringify([input(300, { title: "ชื่อจากไฟล์เท่านั้น", description: "<p>คำอธิบายจากไฟล์</p>[shortcode]", target_video_id: video2 })])) });
+    const row = (await service.batch(batch.id, 1)).rows[0]!;
+    const route = `/rows/${row.id}/review-preview`, body = { targetVideoId: video2, contentConfirmed: true };
+    for (const invalid of [{ targetVideoId: video2 }, { ...body, contentConfirmed: false }, { ...body, values: { title: "tampered" } }, { ...body, fields: ["categoryId"] }]) expect((await http(route, "POST", invalid)).status).toBe(400);
+    expect((await http(route, "POST", body, { "x-csrf-token": "wrong" })).status).toBe(403);
+    const before = await prisma.video.findUniqueOrThrow({ where: { id: video2 } });
+    const image = await prisma.videoMetadataImage.findUnique({ where: { videoId: video2 } });
+    const response = await http(route, "POST", body); expect(response.status).toBe(201); const plan = await response.json();
+    expect(plan.fields.sort()).toEqual(["description", "title"]); expect(plan.contentReviewedAt).toEqual(expect.any(String));
+    expect((await prisma.video.findUniqueOrThrow({ where: { id: video2 } })).title).toBe(before.title);
+    await service.applyOne(actor, row.id, plan.token);
+    const after = await prisma.video.findUniqueOrThrow({ where: { id: video2 } });
+    expect(after).toEqual({ ...before, title: "ชื่อจากไฟล์เท่านั้น", description: "<p>คำอธิบายจากไฟล์</p>[shortcode]", updatedAt: after.updatedAt });
+    expect(await prisma.videoMetadataImage.findUnique({ where: { videoId: video2 } })).toEqual(image);
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { entityId: video2, action: "WORDPRESS_METADATA_APPLIED" }, orderBy: { createdAt: "desc" } });
+    expect(audit.metadataJson).toMatchObject({ contentReviewedAt: plan.contentReviewedAt });
+  });
+  it("keeps existing text for empty import fields and rejects an entirely empty approval", async () => {
+    const batch = await service.stage(actor, { originalname: "empty-text.json", buffer: Buffer.from(JSON.stringify([input(301, { title: "ใหม่", description: "" }), input(302, { title: "", description: "" })])) });
+    const rows = (await service.batch(batch.id, 1)).rows;
+    const plan = await service.reviewPreview(actor, rows[0]!.id, { targetVideoId: video2, contentConfirmed: true });
+    expect(plan.after.description).toBe(plan.before.description); expect(plan.fields).toEqual(["title"]);
+    await expect(service.reviewPreview(actor, rows[1]!.id, { targetVideoId: video2, contentConfirmed: true })).rejects.toThrow(/ไม่มีชื่อเรื่อง/);
+  });
   it("undoes two successive changes in reverse order without overwriting journal snapshots",async()=>{
     const original=await prisma.video.findUniqueOrThrow({where:{id:video2}});
     const a=await stage(60,{title:'รุ่น A'},video2);const appliedA=await service.applyOne(actor,a.r.id,a.p.token);

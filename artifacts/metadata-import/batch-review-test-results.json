@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-12",
+  "scope": "Batch-first video inspection and approval of imported title/description",
+  "apiTests": 71,
+  "apiTypecheck": "passed",
+  "adminTypecheck": "passed",
+  "browser": {
+    "passed": true,
+    "real": [
+      "Next login and CSRF session",
+      "Nest and PostgreSQL",
+      "immediate candidate listing after upload",
+      "unmatched item",
+      "generic video playback",
+      "content attestation before preview",
+      "switching video invalidates approval",
+      "before-after confirmation",
+      "persist only source title/description",
+      "protected fields unchanged",
+      "rollback",
+      "STAFF redirect",
+      "desktop 1440 and mobile 390 without page overflow"
+    ],
+    "storage": "localhost synthetic WebM through test storage URL; no production R2",
+    "pageErrors": 0
+  },
+  "schemaChanges": false,
+  "production": {
+    "deployed": false,
+    "tested": false
+  },
+  "limits": {
+    "pageRows": 25,
+    "concurrentDiscoveryRows": 3,
+    "approvalRows": 2
+  },
+  "contentReview": "User attestation, not automated semantic matching or proof of viewing the full video"
+}

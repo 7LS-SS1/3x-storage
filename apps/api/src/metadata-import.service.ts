@@ -12,7 +12,7 @@ type Values = { title: string; description: string | null; categoryId: string | 
 type Snapshot = Values & { videoUpdatedAt: string; imageVersion: number };
 type Actor = { id: string; name: string };
 type SourceState = { exists: boolean; targetVideoId?: string; rawJson?: Prisma.JsonValue; sourceHash?: string; latestChangeId?: string | null };
-type Preview = { targetVideoId: string; publicId: string; before: Snapshot; after: Values; fields: Field[]; warnings: string[]; sourceBefore: SourceState; expiresAt: number };
+type Preview = { targetVideoId: string; publicId: string; before: Snapshot; after: Values; fields: Field[]; warnings: string[]; sourceBefore: SourceState; expiresAt: number; contentReviewedAt?: string };
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const previewSchema = z.object({
   targetVideoId: z.string().trim().min(1).max(128),
@@ -48,6 +48,29 @@ export class MetadataImportService {
     if (!row) throw new NotFoundException("ไม่พบรายการ");
     const source = row.siteUrl && row.postId ? await this.prisma.wordPressMetadataSource.findUnique({ where: { siteUrl_postId: { siteUrl: row.siteUrl, postId: row.postId } } }) : null;
     return { row, existingMapping: source?.active ? source.targetVideoId : null };
+  }
+  async reviewBatch(id: string, page: number) {
+    const result = await this.batch(id, page);
+    const rows = [];
+    // Bound database fan-out to three rows at once and one 25-row page.
+    for (let i = 0; i < result.rows.length; i += 3) {
+      rows.push(...await Promise.all(result.rows.slice(i, i + 3).map(async row => {
+        if (row.status !== "PENDING") return { ...row, discovery: null, discoveryError: null };
+        try { return { ...row, discovery: await this.candidates(row.id), discoveryError: null }; }
+        catch { return { ...row, discovery: null, discoveryError: "ค้นหาคู่ไม่สำเร็จ กรุณาโหลดรายการใหม่" }; }
+      })));
+    }
+    return { ...result, rows };
+  }
+  async reviewPreview(actor: Actor, rowId: string, body: unknown) {
+    const parsed = z.object({ targetVideoId: z.string().trim().min(1).max(128), contentConfirmed: z.literal(true), fields: z.array(z.enum(["title", "description"])).min(1).max(2).default(["title", "description"]) }).strict().safeParse(body);
+    if (!parsed.success) throw new BadRequestException("ต้องยืนยันว่าเนื้อหาตรงกัน และเลือกเฉพาะชื่อเรื่อง/คำอธิบายจากไฟล์");
+    const row = await this.prisma.metadataImportRow.findUnique({ where: { id: rowId } }); this.assertPending(row);
+    const n = row.normalizedJson as unknown as NormalizedMetadata;
+    const selected = [...new Set(parsed.data.fields)].filter(field => typeof n[field] === "string" && n[field]!.trim());
+    if (!selected.length) throw new BadRequestException("ไฟล์ไม่มีชื่อเรื่องหรือคำอธิบายที่ไม่ว่างสำหรับฟิลด์ที่เลือก");
+    // Values come exclusively from the staged file, never from submitted form text.
+    return this.preview(actor, rowId, { targetVideoId: parsed.data.targetVideoId, fields: selected, allowEmpty: false, values: {} }, true);
   }
   async targets(id: string) {
     // Exact ID/publicId lookup only. Never fuzzy title matching.
@@ -93,7 +116,7 @@ export class MetadataImportService {
   private sourceState(source: { active: boolean; targetVideoId: string; rawJson: Prisma.JsonValue; sourceHash: string; latestChangeId: string | null } | null): SourceState {
     return source?.active ? { exists: true, targetVideoId: source.targetVideoId, rawJson: source.rawJson, sourceHash: source.sourceHash, latestChangeId: source.latestChangeId } : { exists: false };
   }
-  async preview(actor: Actor, rowId: string, body: unknown) {
+  async preview(actor: Actor, rowId: string, body: unknown, contentReviewed = false) {
     const parsed = previewSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("ข้อมูลตรวจสอบไม่ถูกต้อง ต้องเลือก Video ID และฟิลด์ที่ต้องการแก้");
     const input = parsed.data;
@@ -122,7 +145,7 @@ export class MetadataImportService {
         try { const url = new URL(after.imageUrl); if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error(); }
         catch { throw new BadRequestException("URL รูปต้องเป็น HTTP(S) ไม่มี credentials"); }
       }
-      const plan: Preview = { targetVideoId: input.targetVideoId, publicId, before, after, fields: fields.filter(f => before[f] !== after[f]), warnings, sourceBefore: this.sourceState(source), expiresAt: Date.now() + 15 * 60 * 1000 };
+      const plan: Preview = { targetVideoId: input.targetVideoId, publicId, before, after, fields: fields.filter(f => before[f] !== after[f]), warnings, sourceBefore: this.sourceState(source), expiresAt: Date.now() + 15 * 60 * 1000, ...(contentReviewed ? { contentReviewedAt: new Date().toISOString() } : {}) };
       const token = randomUUID();
       await tx.metadataImportRow.update({ where: { id: rowId }, data: { previewJson: json(plan), previewToken: token, previewActorId: actor.id } });
       return { rowId, token, ...plan };
@@ -169,7 +192,7 @@ export class MetadataImportService {
       const change = await tx.metadataChange.create({ data: { rowId, sourceId: source.id, videoId: plan.targetVideoId, actorUserId: actor.id, actorName: actor.name, beforeJson: json(plan.before), afterJson: json(after), fieldsJson: json(plan.fields), sourceBefore: json(plan.sourceBefore), sourceAfter: json({ targetVideoId: plan.targetVideoId, sourceHash, rawJson: row.rawJson }) } });
       await tx.wordPressMetadataSource.update({ where: { id: source.id }, data: { latestChangeId: change.id } });
       await tx.metadataImportRow.update({ where: { id: rowId }, data: { status: "APPLIED" } });
-      await tx.auditLog.create({ data: { actorUserId: actor.id, action: "WORDPRESS_METADATA_APPLIED", entityType: "Video", entityId: plan.targetVideoId, metadataJson: { batchId: row.batchId, rowId, changeId: change.id, fields: plan.fields } } });
+      await tx.auditLog.create({ data: { actorUserId: actor.id, action: "WORDPRESS_METADATA_APPLIED", entityType: "Video", entityId: plan.targetVideoId, metadataJson: { batchId: row.batchId, rowId, changeId: change.id, fields: plan.fields, ...(plan.contentReviewedAt ? { contentReviewedAt: plan.contentReviewedAt } : {}) } } });
       return { rowId, status: "APPLIED", changeId: change.id, replay: false };
     }, { timeout: 15000 });
   }
