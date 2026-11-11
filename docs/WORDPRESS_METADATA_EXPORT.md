@@ -1,3 +1,11 @@
+# Release 1.1.3 — approve all WordPress embed imports
+
+Adds one “อนุมัติทั้งหมด / ยืนยันแก้ไขทั้งหมด” confirmation for every pending ready row from the existing CSV preview. The browser calls the existing authorized, signed, transactional apply endpoint sequentially (no parallel writes or new mutation bypass). Invalid/duplicate/unchanged rows are skipped. Each failure is displayed separately and remaining rows continue. Failed/uncertain rows require fresh preview before retry. Stop waits for the in-flight row; resuming processes only the remaining queue. File/type changes invalidate approval, and controls are locked during work. Existing individual approval, audit/history and rollback stay available.
+
+Local validation: original single-row browser fixture passed; new bulk browser fixture passed cancellation without writes, three ready rows only, maximum one in-flight write, isolated middle-row failure, exact counters, no rendered iframe, stop/resume without replay, and invalidation after file change. Tests use real plugin JS and PHP-rendered fixture HTML with mocked AJAX; no claim of production import or new database-backed mutation testing. ZIP source equality/CRC/allowlist verification passed. PHP mutation code is unchanged; only its UI instructions changed.
+
+No migration. Replacing the plugin enables the new button; it never starts writes before user confirmation. Stop and finish the current request before replacing/deactivating the plugin. Already saved edits persist and can be reversed using the existing audit history. Keep the tab open until completion.
+
 # Release 1.1.2 — 2026-11-12
 
 Removed the full raw JSON review DOM from the export page. Review still processes every batch but retains only counters on screen; download still streams complete original records to JSON/CSV/report. No schema or source-data changes.

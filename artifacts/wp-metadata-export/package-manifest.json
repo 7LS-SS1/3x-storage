@@ -1,16 +1,16 @@
 {
-  "file": "wp-metadata-export-1.1.2.zip",
-  "version": "1.1.2",
-  "size_bytes": 23118,
-  "sha256": "29c6b94d522ed5f76989d343ace85b67e3ae53c332e58ab3b27626b48957d703",
+  "file": "wp-metadata-export-1.1.3.zip",
+  "version": "1.1.3",
+  "size_bytes": 24324,
+  "sha256": "4ed4b895266fe4cac4c868995d054c014ad6e99106f15f58a1575740cd3d4297",
   "entries": [
     {
       "path": "wp-metadata-export/wp-metadata-export.php",
-      "sha256": "9c83b877f9ad719b5dac5506309a6184b8eb53f0db96a16899a65d3fb079bc9d"
+      "sha256": "a68341066286d5bd9a701bd154f7b221d349abe8844bb534a4e4d18c311ac7f1"
     },
     {
       "path": "wp-metadata-export/includes/core.php",
-      "sha256": "707b076bc8f5507a9e591ce2a4dfb9c65fc5b683c66a0bff76c5cd660a6aad89"
+      "sha256": "49b77ac6c7dd46f370fe3b5116df2d3cdbd45dd2d09a24b632ae420a1818c520"
     },
     {
       "path": "wp-metadata-export/includes/admin.php",
@@ -18,7 +18,7 @@
     },
     {
       "path": "wp-metadata-export/includes/import.php",
-      "sha256": "983e9b06d7c5c0ed216c47707ee1a7362b09c7d3707c42baa3204bc22ed3845d"
+      "sha256": "9a9ea37ed04ff06125684a1244a56e175e75e8f95b6da144f7610cd2d7ab7297"
     },
     {
       "path": "wp-metadata-export/assets/admin.js",
@@ -26,11 +26,11 @@
     },
     {
       "path": "wp-metadata-export/assets/import.js",
-      "sha256": "3cd015681d4d335d3eda4e8eeddabbbe38339da474c6521cf49a9bb3e01cf3c2"
+      "sha256": "fe34e2f92334367a4b0ab7ab63dc95678e02945b695bd926d8e9e68c653428cb"
     },
     {
       "path": "wp-metadata-export/README.md",
-      "sha256": "6b8206ecb64729ecc6d7cb5642663802fda6511f6ff25d0f287d7ebbcbc761fb"
+      "sha256": "3b2a3fa1780b283527057c9871513cef54d27f7b747a2413e57d272a2182bd72"
     }
   ],
   "checks": "single plugin root; exact runtime allowlist; CRC and source-byte equality; no tests, fixtures, credentials or private exports"
