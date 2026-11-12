@@ -6,7 +6,7 @@ import { PrismaService } from "./prisma.service";
 import { AdminSessionGuard, CsrfGuard, type AdminRequest } from "./admin-auth.guard";
 import { MetadataAdminGuard } from "./metadata-import.controller";
 
-export const videoJobInput = z.object({ threshold: z.number().int().min(70).max(95).default(80), samples: z.union([z.literal(12), z.literal(30), z.literal(60)]).default(30), restart: z.boolean().default(false) }).strict();
+export const videoJobInput = z.object({ threshold: z.literal(80).default(80), samples: z.union([z.literal(12), z.literal(30), z.literal(60)]).default(30), restart: z.boolean().default(false) }).strict();
 export const videoEligibility = { deletedAt: null, posterKey: null, status: { in: ["UPLOADED", "PROCESSING", "READY"] as ("UPLOADED" | "PROCESSING" | "READY")[] } };
 export const LEASE_MS = 90_000;
 export type ClaimedTask = MetadataVideoTask & { leaseToken: string };
@@ -54,7 +54,7 @@ export class MetadataVideoJobs {
         if (await tx.metadataVideoTask.count({ where: { jobId: job.id, status: "RUNNING", leaseUntil: { gt: new Date() } } })) throw new ConflictException("กำลังพักงาน รอเฟรมปัจจุบันเสร็จก่อนลองใหม่");
         // A recovered source must also be compared with previously completed videos.
         const sourceFailed = await tx.metadataVideoTask.count({ where: { jobId: job.id, kind: "SOURCE", status: "FAILED" } });
-        await tx.metadataVideoTask.updateMany({ where: { jobId: job.id, OR: [{ status: "FAILED" }, ...(sourceFailed ? [{ kind: "VIDEO", status: "DONE" }] : [])] }, data: { status: "PENDING", attempts: 0, error: null, runAfter: new Date() } });
+        await tx.metadataVideoTask.updateMany({ where: { jobId: job.id, OR: [{ status: "FAILED" }, ...(sourceFailed ? [{ kind: "VIDEO", status: { in: ["DONE", "SKIPPED"] } }] : [])] }, data: { status: "PENDING", attempts: 0, error: null, runAfter: new Date() } });
       }
       if (job.status !== "COMPLETED" || action === "retry") await tx.metadataVideoJob.update({ where: { id: job.id }, data: { status: action === "pause" ? "PAUSED" : "RUNNING" } });
       return { jobId: job.id };
@@ -69,22 +69,25 @@ export class MetadataVideoJobs {
       this.prisma.metadataVideoTask.aggregate({ where: { jobId: job.id }, _max: { updatedAt: true } }),
       this.prisma.metadataVideoTask.findMany({ where: { jobId: job.id, kind: "VIDEO", status: "RUNNING", leaseUntil: { gt: new Date() } }, select: { refId: true, framesDone: true }, take: 4 }),
       this.prisma.metadataVideoTask.findMany({ where: { jobId: job.id, status: "FAILED" }, select: { refId: true, kind: true, error: true }, take: 100, orderBy: { updatedAt: "desc" } }),
-      this.prisma.metadataImportRow.findMany({ where: { batchId }, select: { id: true }, orderBy: { ordinal: "asc" }, skip: (page - 1) * 25, take: 25 })
+      this.prisma.metadataImportRow.findMany({ where: { batchId }, select: { id: true, status: true }, orderBy: { ordinal: "asc" }, skip: (page - 1) * 25, take: 25 })
     ]);
     const ids = rows.map(row => row.id);
-    const [sources, matches] = await Promise.all([
+    const [sources, matches, frameChanges] = await Promise.all([
       this.prisma.metadataVideoTask.findMany({ where: { jobId: job.id, kind: "SOURCE", refId: { in: ids } }, select: { refId: true, dataJson: true, error: true } }),
-      this.prisma.metadataVideoMatch.findMany({ where: { jobId: job.id, rowId: { in: ids } }, orderBy: [{ score: "desc" }, { videoId: "asc" }] })
+      this.prisma.metadataVideoMatch.findMany({ where: { jobId: job.id, rowId: { in: ids } }, orderBy: [{ score: "desc" }, { videoId: "asc" }] }),
+      this.prisma.metadataChange.findMany({ where: { rowId: { in: ids }, sourceAfter: { path: ["frameProof", "basis"], equals: "video_frame_similarity" } }, select: { rowId: true } })
     ]);
     const videos = await this.prisma.video.findMany({ where: { id: { in: [...new Set(matches.map(m => m.videoId))] }, deletedAt: null, status: { notIn: ["DELETED", "DELETING"] } }, select: { id: true, publicId: true, title: true } });
     const count = (kind: string, statuses?: string[]) => groups.filter(g => g.kind === kind && (!statuses || statuses.includes(g.status))).reduce((n, g) => n + g._count, 0);
     return {
-      job: { id: job.id, status: job.status, threshold: job.threshold, samples: job.samples, createdAt: job.createdAt, lastActivityAt: activity._max.updatedAt || job.createdAt,
-        sourceTotal: count("SOURCE"), loaded: count("SOURCE", ["DONE", "FAILED"]), total: count("VIDEO"), scanned: count("VIDEO", ["DONE", "FAILED"]), failed: count("VIDEO", ["FAILED"]), sourceFailed: count("SOURCE", ["FAILED"]),
+      job: { id: job.id, status: job.status, threshold: 80, samples: job.samples, createdAt: job.createdAt, lastActivityAt: activity._max.updatedAt || job.createdAt,
+        applied: await this.prisma.metadataImportRow.count({ where: { batchId, status: { in: ["APPLIED", "NOOP"] } } }), skipped: count("VIDEO", ["SKIPPED"]),
+        sourceTotal: count("SOURCE"), loaded: count("SOURCE", ["DONE", "FAILED"]), total: count("VIDEO"), scanned: count("VIDEO", ["DONE", "FAILED", "SKIPPED"]), failed: count("VIDEO", ["FAILED"]), sourceFailed: count("SOURCE", ["FAILED"]),
         frames: groups.reduce((n, g) => n + (g._sum.framesDone || 0), 0), cached: groups.reduce((n, g) => n + (g._sum.cacheHits || 0), 0), current, failures },
       rows: ids.map(rowId => {
         const source = sources.find(s => s.refId === rowId);
-        return { rowId, source: (source?.dataJson as { source?: string })?.source || null, error: source?.error || null, candidates: matches.filter(m => m.rowId === rowId).flatMap(m => {
+        const status = rows.find(r => r.id === rowId)?.status;
+        return { rowId, autoBasis: frameChanges.some(c => c.rowId === rowId) ? "video_frame_similarity" : "other", autoStatus: ["APPLIED", "NOOP", "ROLLED_BACK"].includes(status || "") ? status : undefined, source: (source?.dataJson as { source?: string })?.source || null, error: source?.error || null, candidates: matches.filter(m => m.rowId === rowId).flatMap(m => {
           const video = videos.find(v => v.id === m.videoId); if (!video) return [];
           return [{ ...video, evidence: [`เฟรมที่ ${m.seconds.toFixed(1)} วินาที • ${m.panel} • คะแนนความคล้าย ${m.score}/100 (ไม่ใช่ความน่าจะเป็น)`], frame: { seconds: m.seconds, panel: m.panel }, cover: { score: m.score, exact: false, thumbnail: m.thumbnail } }]; }) };
       })
@@ -107,7 +110,7 @@ export class MetadataVideoJobs {
   }
 
   async renew(task: ClaimedTask, data: Prisma.MetadataVideoTaskUpdateManyMutationInput = {}) {
-    const result = await this.prisma.metadataVideoTask.updateMany({ where: { id: task.id, leaseToken: task.leaseToken, status: "RUNNING", leaseUntil: { gt: new Date() }, job: { status: "RUNNING" } }, data: { ...data, leaseUntil: data.status === "DONE" ? null : new Date(Date.now() + LEASE_MS) } });
+    const result = await this.prisma.metadataVideoTask.updateMany({ where: { id: task.id, leaseToken: task.leaseToken, status: "RUNNING", leaseUntil: { gt: new Date() }, job: { status: "RUNNING" } }, data: { ...data, leaseUntil: data.status === "DONE" || data.status === "SKIPPED" ? null : new Date(Date.now() + LEASE_MS) } });
     return result.count === 1;
   }
 
@@ -116,8 +119,14 @@ export class MetadataVideoJobs {
   }
 
   async finishJobs() {
+    // Keep queue history, but never decode the remaining library after all usable
+    // source rows are resolved. In-flight workers recheck rows before their next frame.
+    await this.prisma.$executeRaw`UPDATE "MetadataVideoTask" t SET status='SKIPPED', "updatedAt"=CURRENT_TIMESTAMP
+      FROM "MetadataVideoJob" j WHERE j.id=t."jobId" AND j.status='RUNNING' AND t.kind='VIDEO' AND t.status='PENDING'
+      AND NOT EXISTS (SELECT 1 FROM "MetadataVideoTask" s JOIN "MetadataImportRow" r ON r.id=s."refId"
+        WHERE s."jobId"=j.id AND s.kind='SOURCE' AND s.status IN ('PENDING','RUNNING','DONE') AND r.status='PENDING')`;
     await this.prisma.$executeRaw`UPDATE "MetadataVideoJob" j SET status='COMPLETED', "updatedAt"=CURRENT_TIMESTAMP WHERE j.status='RUNNING'
-      AND NOT EXISTS (SELECT 1 FROM "MetadataVideoTask" t WHERE t."jobId"=j.id AND t.status NOT IN ('DONE','FAILED'))`;
+      AND NOT EXISTS (SELECT 1 FROM "MetadataVideoTask" t WHERE t."jobId"=j.id AND t.status NOT IN ('DONE','FAILED','SKIPPED'))`;
   }
 }
 

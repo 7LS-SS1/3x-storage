@@ -20,14 +20,14 @@ const {chromium}=admin('@playwright/test'),sharp=api('sharp');
   else if(req.url.includes('/review?page=')){const page=Number(new URL(req.url,'http://localhost').searchParams.get('page'));data={batch,rows:rows.slice((page-1)*25,page*25),total:26,page};}
 
   else if(req.url.endsWith('/video-job') && req.method==='POST'){
-   assert.equal(JSON.parse(body).threshold,70);assert.equal(JSON.parse(body).samples,12);
-   job={id:'job',status:'RUNNING',threshold:70,samples:12,createdAt:new Date().toISOString(),lastActivityAt:new Date().toISOString(),loaded:26,sourceTotal:26,total:1,scanned:0,frames:1,cached:0,failed:0,sourceFailed:0,current:[{refId:'generic-video',framesDone:1}],failures:[]};
+   assert.equal(JSON.parse(body).threshold,80);assert.equal(JSON.parse(body).samples,12);
+   job={id:'job',status:'RUNNING',threshold:80,samples:12,createdAt:new Date().toISOString(),lastActivityAt:new Date().toISOString(),loaded:26,sourceTotal:26,total:1,scanned:0,frames:1,cached:0,applied:0,skipped:0,failed:0,sourceFailed:0,current:[{refId:'generic-video',framesDone:1}],failures:[]};
    data={jobId:'job'};
   } else if(req.url.includes('/video-job?page=')){
    const p=Number(new URL(req.url,'http://localhost').searchParams.get('page'));
-   data={job,rows:job?rows.slice((p-1)*25,p*25).map(r=>({rowId:r.id,source:poster,error:null,candidates:['row-0','row-25'].includes(r.id)?[{id:'generic-video',publicId:'public-fixture',title:'วิดีโอไม่มีปก',evidence:['ผลทดสอบเฟรม'],frame:{seconds:2.5,panel:'ช่อง 2/3 จากซ้าย'},cover:{score:86.4,exact:false,thumbnail:poster}}]:[]})):[]};
+   data={job,rows:job?rows.slice((p-1)*25,p*25).map(r=>({rowId:r.id,autoBasis:'video_frame_similarity',autoStatus:job.status==='COMPLETED'&&['row-0','row-25'].includes(r.id)?'APPLIED':undefined,source:poster,error:null,candidates:['row-0','row-25'].includes(r.id)?[{id:'generic-video',publicId:'public-fixture',title:'วิดีโอไม่มีปก',evidence:['ผลทดสอบเฟรม'],frame:{seconds:2.5,panel:'ช่อง 2/3 จากซ้าย'},cover:{score:86.4,exact:false,thumbnail:poster}}]:[]})):[]};
   } else if(req.url.endsWith('/video-job/pause')){job.status='PAUSED';data={jobId:'job'};}
-  else if(req.url.endsWith('/video-job/resume')){job.status='COMPLETED';job.scanned=1;job.frames=12;job.cached=1;job.current=[];data={jobId:'job'};}
+  else if(req.url.endsWith('/video-job/resume')){job.status='COMPLETED';job.applied=2;job.scanned=1;job.frames=12;job.cached=1;job.current=[];data={jobId:'job'};}
   else if(req.url.includes('/admin-preview-token'))data={preview:{title:'วิดีโอทดสอบ',url:`http://${req.headers.host}/fixture.mp4`,mimeType:'video/mp4',posterUrl:null}};
   else {res.statusCode=400;data={message:'Unexpected fixture request'};}
   res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));
@@ -40,7 +40,7 @@ const {chromium}=admin('@playwright/test'),sharp=api('sharp');
   await page.getByLabel('โหมดจับคู่',{exact:true}).selectOption('video');await page.getByLabel('เลือก batch',{exact:true}).selectOption('batch');
   await page.getByRole('heading',{name:'ตรวจจับด้วยวิดีโอ',exact:true}).waitFor();
   assert.equal(calls.some(c=>c.url.includes('scan')),false);
-  await page.getByLabel('คะแนนขั้นต่ำ',{exact:true}).selectOption('70');await page.getByLabel('จำนวนเฟรม',{exact:true}).selectOption('12');
+  await page.getByLabel('จำนวนเฟรม',{exact:true}).selectOption('12');
   await page.getByRole('button',{name:'เริ่มตรวจจับด้วยวิดีโอ',exact:true}).click();
 
   await page.getByText(/กำลังตรวจเบื้องหลัง/).waitFor();
@@ -55,24 +55,17 @@ const {chromium}=admin('@playwright/test'),sharp=api('sharp');
   await page.getByRole('button',{name:'ทำต่อจากงานเดิม',exact:true}).click();
   await page.getByText(/จบรอบตรวจแล้ว/).waitFor();
 
-  assert.equal(await page.getByRole('button',{name:'เล่นตรวจจาก 2.5 วินาที',exact:true}).count(),1);
-  const before=calls.filter(c=>c.method==='POST'&&c.url.endsWith('/video-job')).length;
+
+  await page.getByText('บันทึกชื่อเรื่อง/คำอธิบายอัตโนมัติจากไฟล์ เพราะคะแนนเฟรมผ่าน 80/100 — ย้อนคืนได้ในประวัติ',{exact:true}).waitFor();
+  const starts=calls.filter(c=>c.method==='POST'&&c.url.endsWith('/video-job')).length;
   await page.getByRole('button',{name:'ถัดไป',exact:true}).click();
-  await page.getByRole('heading',{name:/รายการ 26/}).waitFor();
-  await page.getByRole('button',{name:'เล่นตรวจจาก 2.5 วินาที',exact:true}).waitFor();
-  assert.equal(calls.filter(c=>c.method==='POST'&&c.url.endsWith('/video-job')).length,before);
-  assert.equal(calls.some(c=>/apply|whole-cover-scan|review-preview/.test(c.url)),false);
-  await page.getByRole('button',{name:'เล่นตรวจจาก 2.5 วินาที',exact:true}).click();
-  assert.ok(calls.some(c=>c.url.includes('/videos/generic-video/admin-preview-token?source=original')));
-  assert.equal(await page.getByRole('button',{name:'ตรวจชื่อเรื่อง/คำอธิบายก่อนอนุมัติ',exact:true}).isDisabled(),true);
-  await page.waitForFunction(()=>{const v=document.querySelector('video');return v&&Math.abs(v.currentTime-2.5)<0.2;});
-  await page.getByRole('button',{name:'เล่น',exact:true}).click();
-  const confirm=page.getByRole('checkbox',{name:'ฉันเล่นตรวจแล้ว และยืนยันว่าเนื้อหาตรงกับบทความนี้',exact:true});await confirm.waitFor();
-  await page.waitForFunction(()=>[...document.querySelectorAll('input[type=checkbox]')].some(e=>e.parentElement.textContent.includes('ฉันเล่นตรวจแล้ว')&&!e.disabled));
-  await confirm.check();assert.equal(await page.getByRole('button',{name:'ตรวจชื่อเรื่อง/คำอธิบายก่อนอนุมัติ',exact:true}).isEnabled(),true);
-  await page.getByRole('button',{name:'หยุดชั่วคราว',exact:true}).click();
+  await page.getByRole('heading',{name:/รายการ 26.*บันทึกแล้ว/}).waitFor();
+  assert.equal(calls.filter(c=>c.method==='POST'&&c.url.endsWith('/video-job')).length,starts);
+  assert.equal(await page.getByRole('button',{name:'ตรวจชื่อเรื่อง/คำอธิบายก่อนอนุมัติ',exact:true}).count(),0);
+  assert.equal(calls.some(c=>/review-preview|admin-preview-token|\/apply|whole-cover-scan/.test(c.url)),false);
+  await page.getByText(/Video ID: generic-video.*86.4/).waitFor();
   await page.screenshot({path:path.join(out,'video-mode-desktop.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'video-mode-mobile.png'),fullPage:true});
-  assert.deepEqual(errors,[]);console.log('METADATA_VIDEO_BROWSER_OK background job resumes after reload, pause/resume, no duplicate start, cross-page persisted results, no automatic writes, real synthetic MP4 seek/play');
+  assert.deepEqual(errors,[]);console.log('METADATA_VIDEO_BROWSER_OK background job resumes after reload, pause/resume, no duplicate start, cross-page persisted results, automatic applied status without approval/player requests, fixed 80 threshold, proof visible');
  }finally{await browser.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

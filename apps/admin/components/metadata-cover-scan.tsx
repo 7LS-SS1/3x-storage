@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiRequestError, apiRequest } from "@/lib/api-client";
 import type { Candidate } from "./metadata-batch-review-row";
 
-export type CoverResult = { rowId: string; source: string | null; error: string | null; candidates: Candidate[]; autoStatus?: string; autoError?: string };
+export type CoverResult = { rowId: string; source: string | null; error: string | null; candidates: Candidate[]; autoStatus?: string; autoError?: string; autoBasis?: string };
 type ScanPage = { sourceRead?: number; sourceTotal?: number; scanId?: string; autoRows?: string[]; ceiling: string; next: string | null; total: number; scanned: number; compared: number; missing: number; failed: { videoId: string; reason: string }[]; rows: CoverResult[] };
 const empty = { applied: 0, applyFailed: 0, sourceRead: 0, sourceTotal: 0, scanned: 0, compared: 0, missing: 0, failed: 0, total: 0, done: false, running: false, error: "", reasons: [] as { videoId: string; reason: string }[] };
 

@@ -19,9 +19,9 @@ it("only reads the persisted job on mount and leaves it running on unmount", asy
 it("sends explicit start/pause/resume only, never automatic metadata writes", async()=>{
   h.request.mockResolvedValue({jobId:"job"});
   const scan=useMetadataVideoScan("batch");
-  await scan.start(70,12); await scan.control("pause"); await scan.control("resume");
+  await scan.start(80,12); await scan.control("pause"); await scan.control("resume");
   expect(h.request.mock.calls.map(c=>c[0])).toEqual(["/metadata-import/batches/batch/video-job","/metadata-import/batches/batch/video-job/pause","/metadata-import/batches/batch/video-job/resume"]);
-  expect(JSON.parse(h.request.mock.calls[0]![1].body)).toEqual({threshold:70,samples:12,restart:false});
+  expect(JSON.parse(h.request.mock.calls[0]![1].body)).toEqual({threshold:80,samples:12,restart:false});
 });
 it("ignores a late GET after leaving the batch",async()=>{
   let resolve!: (value:unknown)=>void; h.request.mockImplementation(()=>new Promise(r=>{resolve=r;}));

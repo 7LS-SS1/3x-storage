@@ -26,6 +26,49 @@ const previewSchema = z.object({
 export class MetadataImportService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // Internal worker entry only. The caller locks the job and commits this together
+  // with the matching evidence and task completion; there is no public score input.
+  async applyFrameMatch(tx: Prisma.TransactionClient, actorId: string, rowId: string, videoId: string,
+    proof: { jobId: string; score: number; seconds: number; panel: string; objectIdentity: string; storageKey: string }) {
+    if (!Number.isFinite(proof.score) || proof.score < 80) throw new ConflictException("คะแนนเฟรมไม่ผ่าน 80/100");
+    const actor = await tx.user.findFirst({ where: { id: actorId, active: true, role: { in: ["ADMIN", "SYSTEM"] } }, select: { id: true, name: true } });
+    if (!actor) throw new ConflictException("ผู้เริ่มงานไม่มีสิทธิ์ผู้ดูแลแล้ว");
+    await tx.$queryRaw`SELECT id FROM "MetadataImportRow" WHERE id=${rowId} FOR UPDATE`;
+    const row = await tx.metadataImportRow.findUnique({ where: { id: rowId } });
+    if (row?.status !== "PENDING") return false;
+    this.assertPending(row);
+    await this.lockVideoAndSource(tx, videoId, row.siteUrl!, row.postId!);
+    const n = row.normalizedJson as unknown as NormalizedMetadata;
+    if (n.targetVideoId && n.targetVideoId !== videoId) return false;
+    const video = await tx.video.findFirst({ where: { id: videoId, deletedAt: null, posterKey: null, status: { in: ["UPLOADED", "PROCESSING", "READY"] } }, select: { originalKey: true, files: { where: { role: "ORIGINAL" }, orderBy: { createdAt: "desc" }, take: 1, select: { storageKey: true } } } });
+    if (!video || (video.files[0]?.storageKey || video.originalKey) !== proof.storageKey) throw new ConflictException("ไฟล์วิดีโอเปลี่ยนระหว่างตรวจ");
+    const existing = await tx.wordPressMetadataSource.findUnique({ where: { siteUrl_postId: { siteUrl: row.siteUrl!, postId: row.postId! } } });
+    if (existing?.active && existing.targetVideoId !== videoId) throw new ConflictException("ต้นทางเคยจับคู่กับวิดีโออื่นแล้ว");
+    // Serialize on Video so two workers/batches cannot assign different posts to it.
+    if (await tx.wordPressMetadataSource.findFirst({ where: { targetVideoId: videoId, active: true, NOT: { siteUrl: row.siteUrl!, postId: row.postId! } }, select: { id: true } })) return false;
+    const before = (await this.snapshot(tx, videoId)).snapshot;
+    const after: Values = { title: before.title, description: before.description, categoryId: before.categoryId, imageUrl: before.imageUrl };
+    if (typeof n.title === "string" && n.title.trim()) after.title = n.title;
+    if (typeof n.description === "string" && n.description.trim()) after.description = n.description;
+    if (!n.title?.trim() && !n.description?.trim()) throw new ConflictException("ไม่มีชื่อเรื่องหรือคำอธิบายสำหรับอัปเดต");
+    const changed = (["title", "description"] as Field[]).filter(f => before[f] !== after[f]);
+    const sourceHash = metadataHash(row.rawJson);
+    if (!changed.length && existing?.active && existing.sourceHash === sourceHash) {
+      await tx.metadataImportRow.update({ where: { id: rowId }, data: { status: "NOOP" } });
+      return true;
+    }
+    const sourceBefore = this.sourceState(existing);
+    await this.writeValues(tx, videoId, after, changed);
+    const saved = (await this.snapshot(tx, videoId)).snapshot;
+    const source = await tx.wordPressMetadataSource.upsert({ where: { siteUrl_postId: { siteUrl: row.siteUrl!, postId: row.postId! } }, create: { siteUrl: row.siteUrl!, postId: row.postId!, targetVideoId: videoId, rawJson: json(row.rawJson), sourceHash }, update: { targetVideoId: videoId, rawJson: json(row.rawJson), sourceHash, active: true } });
+    const frameProof = { ...proof, basis: "video_frame_similarity", threshold: 80, verifiedAt: new Date().toISOString() };
+    const change = await tx.metadataChange.create({ data: { rowId, sourceId: source.id, videoId, actorUserId: actor.id, actorName: actor.name, beforeJson: json(before), afterJson: json(saved), fieldsJson: json(changed), sourceBefore: json(sourceBefore), sourceAfter: json({ targetVideoId: videoId, sourceHash, rawJson: row.rawJson, frameProof }) } });
+    await tx.wordPressMetadataSource.update({ where: { id: source.id }, data: { latestChangeId: change.id } });
+    await tx.metadataImportRow.update({ where: { id: rowId }, data: { status: "APPLIED", previewJson: Prisma.DbNull, previewToken: null, previewActorId: null } });
+    await tx.auditLog.create({ data: { actorUserId: actor.id, action: "WORDPRESS_METADATA_APPLIED", entityType: "Video", entityId: videoId, metadataJson: { batchId: row.batchId, rowId, changeId: change.id, fields: changed, frameProof: json(frameProof) } } });
+    return true;
+  }
+
   async stage(actor: Actor, file: { buffer: Buffer; originalname: string }) {
     let parsed: ReturnType<typeof parseMetadataFile>;
     try { parsed = parseMetadataFile(file.buffer, file.originalname); }
