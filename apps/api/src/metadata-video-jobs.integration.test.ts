@@ -81,23 +81,21 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
     await drain();
     expect(frames.frame).toHaveBeenCalledTimes(1);
     const status=await jobs.status("batch","admin",1);
-    expect(status.job).toMatchObject({status:"COMPLETED",scanned:1,frames:1,cached:1});
+    expect(status.job).toMatchObject({status:"COMPLETED",scanned:0,total:0,removed:1,frames:1,cached:1});
     expect(status.rows[0]?.candidates[0]?.cover.exact).toBe(false);
   });
 
-  it("reuses all frames across batches and invalidates the cache when the object ETag changes", async()=>{
-    const before=await db.video.findMany(); await jobs.start("batch","admin",{samples:12,threshold:80}); await drain();
+  it("reuses unmatched frames across batches and invalidates changed objects", async()=>{
+    vi.spyOn(images,"compareCovers").mockReturnValue({score:0,exact:false});
+    await jobs.start("batch","admin",{samples:12,threshold:80}); await drain();
     const coldReads=frames.frame.mock.calls.length;
+    expect(coldReads).toBe(12);
     await batch("second"); await jobs.start("second","admin",{samples:12,threshold:80}); await drain();
     expect(frames.frame.mock.calls.length).toBe(coldReads);
-    expect((await jobs.status("second","admin",1)).job?.cached).toBe(1);
+    expect((await jobs.status("second","admin",1)).job?.cached).toBe(12);
     version.etag='"v2"'; await batch("third"); await jobs.start("third","admin",{samples:12,threshold:80}); await drain();
-    expect(frames.frame.mock.calls.length).toBe(coldReads+1);
-    const after=await db.video.findMany(); expect(after[0]?.title).toBe("Imported fixture title");
-    expect({...after[0],title:before[0]!.title,updatedAt:before[0]!.updatedAt}).toEqual(before[0]);
-    expect(await db.metadataChange.count()).toBe(1);
-    expect(frames.frame.mock.calls.every((c:any[])=>c.length===3&&c[2])).toBe(true);
-    console.log("CACHE_FIXTURE: early match=1 decode; warm=0 decodes; changed ETag=1 decode");
+    expect(frames.frame.mock.calls.length).toBe(coldReads+12);
+    expect(await db.metadataChange.count()).toBe(0);
   });
 
   it("fences expired workers and recovers their queued work after restart", async()=>{
@@ -129,17 +127,42 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
     if(applies) expect((await db.metadataChange.findFirstOrThrow()).sourceAfter).toMatchObject({frameProof:{threshold,similarityIgnored:threshold===0}});
   });
 
-  it("pairs multiple pending posts to one video in a single job and exports every source", async () => {
-    await db.metadataImportRow.create({data:{id:'batch-row-2',batchId:'batch',ordinal:2,siteUrl:'https://example.test',postId:'2',rawJson:{record:{video_embed_code_raw:[{source_field:'embed',value:'<iframe src="https://old.example/embed/2"></iframe>'}]}},normalizedJson:{title:'Imported fixture title',imageUrl:'https://example.test/fixture.png'},errorsJson:[],warningsJson:[]}});
+  it("removes each saved video once, leaves other posts pending and excludes it from later batches", async () => {
+    await db.metadataImportRow.create({data:{id:'batch-row-2',batchId:'batch',ordinal:2,siteUrl:'https://example.test',postId:'2',rawJson:{},normalizedJson:{title:'Another title',imageUrl:'https://example.test/fixture.png'},errorsJson:[],warningsJson:[]}});
     await jobs.start('batch','admin',{samples:12,threshold:0});await drain();
-    expect(await db.metadataChange.count()).toBe(2);
-    expect(await db.wordPressMetadataSource.count({where:{targetVideoId:'video',active:true}})).toBe(2);
+    expect(await db.metadataChange.count()).toBe(1);
+    expect(await db.wordPressMetadataSource.count({where:{targetVideoId:'video',active:true}})).toBe(1);
+    expect(await db.metadataImportRow.count({where:{batchId:'batch',status:'PENDING'}})).toBe(1);
     expect(frames.frame).toHaveBeenCalledTimes(1);
-    vi.stubEnv('PLAYER_URL','https://player.example.test');
-    const result=await new MetadataImportService(db as never).exportChanged('batch');
-    expect(result.videos).toHaveLength(2);
-    expect(result.videos[1]?.oldEmbed).toBe('<iframe src="https://old.example/embed/2"></iframe>');
-    vi.unstubAllEnvs();
+    expect((await jobs.status('batch','admin',1)).job).toMatchObject({initialTotal:1,total:0,removed:1,scanned:0});
+    await batch('later'); await jobs.start('later','admin',{threshold:0}); await drain();
+    expect((await jobs.status('later','admin',1)).job).toMatchObject({initialTotal:0,total:0});
+    expect(await db.metadataChange.count()).toBe(1);
+  });
+
+  it("reduces 2299 to 2298 after one saved Video ID, even with several legacy mappings", async () => {
+    await db.video.createMany({data:Array.from({length:2298},(_,i)=>({id:`extra-${i}`,publicId:`extra-public-${i}`,title:"Fixture",status:"UPLOADED" as const,originalKey:`extra-${i}.mp4`,uploadedById:"admin"}))});
+    await jobs.start('batch','admin',{threshold:0});
+    expect((await jobs.status('batch','admin',1)).job?.total).toBe(2299);
+    await next(); await next();
+    const saved=await db.metadataChange.findFirstOrThrow();
+    await db.wordPressMetadataSource.create({data:{siteUrl:'https://legacy.test',postId:'duplicate',targetVideoId:saved.videoId,rawJson:{},sourceHash:'fixture'}});
+    expect((await jobs.status('batch','admin',1)).job).toMatchObject({initialTotal:2299,total:2298,removed:1,scanned:0});
+    expect(await db.video.count()).toBe(2299);
+  });
+
+  it("fences two jobs that already claimed the same video", async () => {
+    await batch('other');
+    await db.metadataImportRow.update({where:{id:'other-row'},data:{postId:'2'}});
+    await jobs.start('batch','admin',{threshold:0}); await jobs.start('other','admin',{threshold:0});
+    await next();
+    const first=await jobs.claim(2); expect(first?.kind).toBe('VIDEO');
+    const source=await jobs.claim(2); expect(source?.kind).toBe('SOURCE'); await processor.process(source!);
+    const second=await jobs.claim(2); expect(second?.kind).toBe('VIDEO');
+    await Promise.all([processor.process(first!),processor.process(second!)]);
+    expect(await db.metadataChange.count()).toBe(1);
+    expect(await db.metadataImportRow.count({where:{status:'APPLIED'}})).toBe(1);
+    for (const id of ['batch','other']) expect((await jobs.status(id,'admin',1)).job).toMatchObject({initialTotal:1,total:0,removed:1});
   });
 
   it("records automatic proof and before/after values, keeps empty description, and rolls back with the existing flow", async()=>{
@@ -155,6 +178,8 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
     const restored=await db.video.findUniqueOrThrow({where:{id:"video"}});
     expect({...restored,updatedAt:before.updatedAt}).toEqual(before);
     expect((await db.metadataImportRow.findUniqueOrThrow({where:{id:"batch-row"}})).status).toBe("ROLLED_BACK");
+    await batch("after-undo"); await jobs.start("after-undo","admin",{threshold:80});
+    expect((await jobs.status("after-undo","admin",1)).job?.total).toBe(1);
   });
 
   it("does not automatically write after the initiating administrator loses permission", async()=>{
@@ -165,7 +190,7 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
     expect((await jobs.status("batch","admin",1)).job?.failed).toBe(1);
   });
 
-  it("respects an explicit target and allows another post to share the same video", async()=>{
+  it("respects an explicit target but never reuses an already saved video", async()=>{
     await createVideo("video2");
     await db.metadataImportRow.update({where:{id:"batch-row"},data:{normalizedJson:{imageUrl:"https://example.test/fixture.png",title:"Explicit target title",targetVideoId:"video2"}}});
     await jobs.start("batch","admin",{samples:12,threshold:80});await drain();
@@ -175,8 +200,8 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
     const reads=frames.frame.mock.calls.length;
     await jobs.start("different-post","admin",{samples:12,threshold:80});await drain();
     expect(frames.frame.mock.calls.length).toBe(reads);
-    expect(await db.metadataChange.count()).toBe(2);
-    expect((await db.video.findUniqueOrThrow({where:{id:"video2"}})).title).toBe("Must not overwrite");
+    expect(await db.metadataChange.count()).toBe(1);
+    expect((await db.video.findUniqueOrThrow({where:{id:"video2"}})).title).toBe("Explicit target title");
   });
 
   it("waits for in-flight work to acknowledge pause before retrying failed sources", async()=>{

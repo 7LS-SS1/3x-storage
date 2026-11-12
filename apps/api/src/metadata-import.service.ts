@@ -40,6 +40,8 @@ export class MetadataImportService {
     this.assertPending(row);
     if (row.batchId !== job.batchId) throw new ConflictException("รายการไม่ได้อยู่ในงานนี้");
     await this.lockVideoAndSource(tx, videoId, row.siteUrl!, row.postId!);
+    // Recheck after acquiring the video lock: only one concurrent job may consume it.
+    if (await tx.wordPressMetadataSource.count({ where: { targetVideoId: videoId, active: true } })) return false;
     const n = row.normalizedJson as unknown as NormalizedMetadata;
     if (n.targetVideoId && n.targetVideoId !== videoId) return false;
     const video = await tx.video.findFirst({ where: { id: videoId, deletedAt: null, posterKey: null, status: { in: ["UPLOADED", "PROCESSING", "READY"] } }, select: { originalKey: true, files: { where: { role: "ORIGINAL" }, orderBy: { createdAt: "desc" }, take: 1, select: { storageKey: true } } } });

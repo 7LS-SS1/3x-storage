@@ -21,13 +21,13 @@ const {chromium}=admin('@playwright/test'),sharp=api('sharp');
 
   else if(req.url.endsWith('/video-job') && req.method==='POST'){
    assert.equal(JSON.parse(body).threshold,0);assert.equal(JSON.parse(body).samples,12);
-   job={id:'job',status:'RUNNING',threshold:0,samples:12,createdAt:new Date().toISOString(),lastActivityAt:new Date().toISOString(),loaded:26,sourceTotal:26,total:1,scanned:0,frames:1,cached:0,applied:0,skipped:0,failed:0,sourceFailed:0,current:[{refId:'generic-video',framesDone:1}],failures:[]};
+   job={id:'job',status:'RUNNING',threshold:0,samples:12,createdAt:new Date().toISOString(),lastActivityAt:new Date().toISOString(),loaded:26,sourceTotal:26,initialTotal:2299,removed:0,total:2299,scanned:0,frames:1,cached:0,applied:0,skipped:0,failed:0,sourceFailed:0,current:[{refId:'generic-video',framesDone:1}],failures:[]};
    data={jobId:'job'};
   } else if(req.url.includes('/video-job?page=')){
    const p=Number(new URL(req.url,'http://localhost').searchParams.get('page'));
-   data={job,rows:job?rows.slice((p-1)*25,p*25).map(r=>({rowId:r.id,autoBasis:'video_frame_similarity',autoStatus:job.status==='COMPLETED'&&['row-0','row-25'].includes(r.id)?'APPLIED':undefined,source:poster,error:null,candidates:['row-0','row-25'].includes(r.id)?[{id:'generic-video',publicId:'public-fixture',title:'วิดีโอไม่มีปก',evidence:['ผลทดสอบเฟรม'],frame:{seconds:2.5,panel:'ช่อง 2/3 จากซ้าย'},cover:{score:86.4,exact:false,thumbnail:poster}}]:[]})):[]};
+   data={job,rows:job?rows.slice((p-1)*25,p*25).map(r=>({rowId:r.id,autoBasis:'video_frame_similarity',autoStatus:job.status==='COMPLETED'&&['row-0','row-25'].includes(r.id)?'APPLIED':undefined,source:poster,error:null,candidates:['row-0','row-25'].includes(r.id)?[{id:'generic-video-'+r.id,publicId:'public-fixture-'+r.id,title:'วิดีโอไม่มีปก',evidence:['ผลทดสอบเฟรม'],frame:{seconds:2.5,panel:'ช่อง 2/3 จากซ้าย'},cover:{score:86.4,exact:false,thumbnail:poster}}]:[]})):[]};
   } else if(req.url.endsWith('/video-job/pause')){job.status='PAUSED';data={jobId:'job'};}
-  else if(req.url.endsWith('/video-job/resume')){job.status='COMPLETED';job.applied=2;job.scanned=1;job.frames=12;job.cached=1;job.current=[];data={jobId:'job'};}
+  else if(req.url.endsWith('/video-job/resume')){job.status='COMPLETED';job.applied=2;job.scanned=0;job.removed=2;job.total=2297;job.frames=12;job.cached=1;job.current=[];data={jobId:'job'};}
   else if(req.url.includes('/admin-preview-token'))data={preview:{title:'วิดีโอทดสอบ',url:`http://${req.headers.host}/fixture.mp4`,mimeType:'video/mp4',posterUrl:null}};
   else {res.statusCode=400;data={message:'Unexpected fixture request'};}
   res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));
@@ -55,6 +55,8 @@ const {chromium}=admin('@playwright/test'),sharp=api('sharp');
   await page.getByText(/พักงานแล้ว/).waitFor();
   await page.getByRole('button',{name:'ทำต่อจากงานเดิม',exact:true}).click();
   await page.getByText(/จบรอบตรวจแล้ว/).waitFor();
+  assert.match(await page.getByRole('region',{name:'ตรวจจับด้วยวิดีโอ',exact:true}).innerText(), /วิดีโอที่ตรวจแล้ว\/คลังรอจับคู่ 0\/2297/);
+  assert.match(await page.getByRole('region',{name:'ตรวจจับด้วยวิดีโอ',exact:true}).innerText(), /วิดีโอที่บันทึกแล้วและพ้นคิว 2/);
 
 
   await page.getByText('บันทึกชื่อเรื่อง/คำอธิบายอัตโนมัติจากไฟล์ เพราะผ่านเกณฑ์การจับคู่ที่ตั้งไว้ — ย้อนคืนได้ในประวัติ',{exact:true}).waitFor();

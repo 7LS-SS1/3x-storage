@@ -14,7 +14,7 @@ export function MetadataVideoPanel({ scan, samples, setSamples }: {
   return <section className={styles.note} aria-label="ตรวจจับด้วยวิดีโอ">
     <h3>ตรวจจับด้วยวิดีโอ</h3>
     <p>ตรวจวิดีโอที่ไม่มีรูปปกเป็นงานเบื้องหลัง ปิดแท็บได้ เปิด batch เดิมเพื่อดูผลหรือทำต่อ ข้อมูลเฟรมที่อ่านแล้วใช้ซ้ำได้ใน batch อื่นเมื่อไฟล์วิดีโอยังเป็นเวอร์ชันเดิม</p>
-    <p>ค่าเริ่มต้นรับทุกคะแนนเฟรม (0–100) และบันทึกชื่อเรื่อง/คำอธิบายทันที ไม่ต้องเล่นตรวจหรืออนุมัติ ใช้คู่แรกที่ผ่านเกณฑ์ ไม่รอคู่คะแนนสูงสุดทั่วคลัง หลายบทความใช้วิดีโอเดียวกันได้ และจะตรวจต่อเฉพาะบทความที่ยังไม่จับคู่</p>
+    <p>ค่าเริ่มต้นรับทุกคะแนนเฟรม (0–100) และบันทึกชื่อเรื่อง/คำอธิบายทันที ไม่ต้องเล่นตรวจหรืออนุมัติ ใช้คู่แรกที่ผ่านเกณฑ์ ไม่รอคู่คะแนนสูงสุดทั่วคลัง วิดีโอที่บันทึกสำเร็จจะพ้นจากคิวและไม่ถูกจับคู่ซ้ำใน batch อื่น และจะตรวจต่อเฉพาะบทความที่ยังไม่จับคู่</p>
     <div className={styles.controls}>
       <label>คะแนนขั้นต่ำสำหรับรอบใหม่<select aria-label="คะแนนขั้นต่ำ" value={threshold} disabled={disabled || running} onChange={e => setThreshold(Number(e.target.value))}>{[100,95,90,85,80,75,70,60,50,40,30,20,10,0].map(n => <option key={n} value={n}>{n === 0 ? "ทุกคะแนน (0–100) — บันทึกอัตโนมัติ" : `${n}/100`}</option>)}</select></label>
       {threshold === 0 && <p>โหมดนี้บันทึกคู่แรกที่ตรวจได้ แม้เนื้อหาไม่เกี่ยวกัน ไม่ได้ยืนยันว่าเป็นวิดีโอเดียวกัน</p>}
@@ -23,7 +23,7 @@ export function MetadataVideoPanel({ scan, samples, setSamples }: {
     <p>30 เฟรมคือ 30 จุดตลอดคลิป ไม่ใช่ 30 วินาที การลดจำนวนเฟรมอาจพลาดภาพที่อยู่ระหว่างจุดตรวจ</p>
     {loading && <p role="status">กำลังโหลดงานเดิม…</p>}
     {job && <>
-      <p role="status">{running ? "กำลังตรวจเบื้องหลัง" : job.status === "PAUSED" ? "พักงานแล้ว" : "จบรอบตรวจแล้ว"} • บันทึกแล้วใน batch {job.applied} • ตัดออกจากคิว {job.skipped} • รูปต้นทาง {job.loaded}/{job.sourceTotal} • วิดีโอ {job.scanned}/{job.total} • เฟรมที่ตรวจ {job.frames} • ใช้เฟรมที่เก็บไว้ {job.cached} • วิดีโอผิดพลาด {job.failed} • รูปต้นทางผิดพลาด {job.sourceFailed}</p>
+      <p role="status">{running ? "กำลังตรวจเบื้องหลัง" : job.status === "PAUSED" ? "พักงานแล้ว" : "จบรอบตรวจแล้ว"} • บันทึกแล้วใน batch {job.applied} • วิดีโอที่บันทึกแล้วและพ้นคิว {job.removed ?? 0} • รูปต้นทาง {job.loaded}/{job.sourceTotal} • วิดีโอที่ตรวจแล้ว/คลังรอจับคู่ {job.scanned}/{job.total} • เฟรมที่ตรวจ {job.frames} • ใช้เฟรมที่เก็บไว้ {job.cached} • วิดีโอผิดพลาด {job.failed} • รูปต้นทางผิดพลาด {job.sourceFailed}</p>
       <p>รอบนี้ใช้ {job.samples} เฟรม/คลิป และคะแนนขั้นต่ำ {job.threshold}/100 • Job ID: {job.id}</p>
       {job.current.map(video => <p key={video.refId}>{video.refId}: {video.framesDone}/{job.samples} เฟรม</p>)}
     </>}
@@ -37,7 +37,7 @@ export function MetadataVideoPanel({ scan, samples, setSamples }: {
       {job && !running && !!(job.failed + job.sourceFailed) && <button disabled={disabled} onClick={() => void scan.control("retry")}>ลองรายการที่ผิดพลาดอีกครั้ง</button>}
       <button disabled={disabled} onClick={scan.refresh}>โหลดความคืบหน้าใหม่</button>
     </div>
-    <p>ชื่อเรื่อง/คำอธิบายของวิดีโอใช้ค่าจากรายการที่บันทึกทีหลัง รายการที่บันทึกแล้วจะไม่ถูกเปรียบเทียบซ้ำ เมื่อจับคู่ครบจะข้ามคิวที่เหลือ เก็บประวัติก่อน–หลังและย้อนคืนได้ เริ่มรอบใหม่ไม่ลบประวัติหรือเฟรมที่เก็บไว้</p>
+    <p>เมื่อบันทึกสำเร็จจะนำ Video ID นั้นออกจากกลุ่มรอจับคู่ทันที ไฟล์ยังอยู่ใน Storage ตามเดิม รายการที่บันทึกแล้วจะไม่ถูกเปรียบเทียบซ้ำ เมื่อจับคู่ครบจะข้ามคิวที่เหลือ เก็บประวัติก่อน–หลังและย้อนคืนได้ เริ่มรอบใหม่ไม่ลบประวัติหรือเฟรมที่เก็บไว้</p>
     {!!job?.failures.length && <details><summary>รายการที่ผิดพลาด (ล่าสุดไม่เกิน 100 รายการ)</summary>{job.failures.map((failure,i) => <p key={i}>{failure.kind === "SOURCE" ? "รูปต้นทาง" : "วิดีโอ"} {failure.refId}: {failure.error}</p>)}</details>}
   </section>;
 }

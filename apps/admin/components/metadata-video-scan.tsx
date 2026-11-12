@@ -6,7 +6,7 @@ import type { CoverResult } from "./metadata-cover-scan";
 export type VideoJob = {
   id: string; status: "RUNNING" | "PAUSED" | "COMPLETED"; threshold: number; samples: number;
   createdAt: string; lastActivityAt: string; sourceTotal: number; loaded: number; total: number;
-  scanned: number; failed: number; sourceFailed: number; frames: number; cached: number; applied: number; skipped: number;
+  initialTotal: number; removed: number; scanned: number; failed: number; sourceFailed: number; frames: number; cached: number; applied: number; skipped: number;
   current: { refId: string; framesDone: number }[];
   failures: { refId: string; kind: string; error: string | null }[];
 };

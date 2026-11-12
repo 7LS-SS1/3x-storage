@@ -7,7 +7,7 @@ import { AdminSessionGuard, CsrfGuard, type AdminRequest } from "./admin-auth.gu
 import { MetadataAdminGuard } from "./metadata-import.controller";
 
 export const videoJobInput = z.object({ threshold: z.number().int().min(0).max(100).default(0), samples: z.union([z.literal(12), z.literal(30), z.literal(60)]).default(30), restart: z.boolean().default(false) }).strict();
-export const videoEligibility = { deletedAt: null, posterKey: null, status: { in: ["UPLOADED", "PROCESSING", "READY"] as ("UPLOADED" | "PROCESSING" | "READY")[] } };
+export const videoEligibility = { wordpressSources: { none: { active: true } }, deletedAt: null, posterKey: null, status: { in: ["UPLOADED", "PROCESSING", "READY"] as ("UPLOADED" | "PROCESSING" | "READY")[] } };
 export const LEASE_MS = 90_000;
 export type ClaimedTask = MetadataVideoTask & { leaseToken: string };
 
@@ -38,7 +38,8 @@ export class MetadataVideoJobs {
         // Freeze membership once; this is a queue snapshot, not a lock on Video records.
         await tx.$executeRaw`INSERT INTO "MetadataVideoTask" ("id","jobId","kind","refId","updatedAt")
           SELECT ${job.id} || ':' || "id", ${job.id}, 'VIDEO', "id", CURRENT_TIMESTAMP FROM "Video"
-          WHERE "deletedAt" IS NULL AND "posterKey" IS NULL AND "status" IN ('UPLOADED','PROCESSING','READY')`;
+          WHERE "deletedAt" IS NULL AND "posterKey" IS NULL AND "status" IN ('UPLOADED','PROCESSING','READY')
+          AND NOT EXISTS (SELECT 1 FROM "WordPressMetadataSource" s WHERE s."targetVideoId"="Video".id AND s.active=true)`;
       } else await tx.metadataVideoJob.update({ where: { id: job.id }, data: { status: "COMPLETED" } });
       return { jobId: job.id };
     }, { timeout: 20_000 });
@@ -64,12 +65,15 @@ export class MetadataVideoJobs {
   async status(batchId: string, actorUserId: string, page: number) {
     const job = await this.prisma.metadataVideoJob.findUnique({ where: { batchId_actorUserId: { batchId, actorUserId } } });
     if (!job) return { job: null, rows: [] };
-    const [groups, activity, current, failures, rows] = await Promise.all([
+    const [groups, activity, current, failures, rows, removedGroups] = await Promise.all([
       this.prisma.metadataVideoTask.groupBy({ by: ["kind", "status"], where: { jobId: job.id }, _count: true, _sum: { framesDone: true, cacheHits: true } }),
       this.prisma.metadataVideoTask.aggregate({ where: { jobId: job.id }, _max: { updatedAt: true } }),
       this.prisma.metadataVideoTask.findMany({ where: { jobId: job.id, kind: "VIDEO", status: "RUNNING", leaseUntil: { gt: new Date() } }, select: { refId: true, framesDone: true }, take: 4 }),
       this.prisma.metadataVideoTask.findMany({ where: { jobId: job.id, status: "FAILED" }, select: { refId: true, kind: true, error: true }, take: 100, orderBy: { updatedAt: "desc" } }),
-      this.prisma.metadataImportRow.findMany({ where: { batchId }, select: { id: true, status: true }, orderBy: { ordinal: "asc" }, skip: (page - 1) * 25, take: 25 })
+      this.prisma.metadataImportRow.findMany({ where: { batchId }, select: { id: true, status: true }, orderBy: { ordinal: "asc" }, skip: (page - 1) * 25, take: 25 }),
+      this.prisma.$queryRaw<{ status: string; count: number }[]>`SELECT t.status, COUNT(*)::int AS count FROM "MetadataVideoTask" t
+        WHERE t."jobId"=${job.id} AND t.kind='VIDEO' AND EXISTS
+        (SELECT 1 FROM "WordPressMetadataSource" s WHERE s."targetVideoId"=t."refId" AND s.active=true) GROUP BY t.status`
     ]);
     const ids = rows.map(row => row.id);
     const [sources, matches, frameChanges] = await Promise.all([
@@ -79,10 +83,12 @@ export class MetadataVideoJobs {
     ]);
     const videos = await this.prisma.video.findMany({ where: { id: { in: [...new Set(matches.map(m => m.videoId))] }, deletedAt: null, status: { notIn: ["DELETED", "DELETING"] } }, select: { id: true, publicId: true, title: true } });
     const count = (kind: string, statuses?: string[]) => groups.filter(g => g.kind === kind && (!statuses || statuses.includes(g.status))).reduce((n, g) => n + g._count, 0);
+    const removed = removedGroups.reduce((n, g) => n + g.count, 0);
+    const removedScanned = removedGroups.filter(g => ["DONE", "FAILED"].includes(g.status)).reduce((n, g) => n + g.count, 0);
     return {
       job: { id: job.id, status: job.status, threshold: job.threshold, samples: job.samples, createdAt: job.createdAt, lastActivityAt: activity._max.updatedAt || job.createdAt,
         applied: await this.prisma.metadataImportRow.count({ where: { batchId, status: { in: ["APPLIED", "NOOP"] } } }), skipped: count("VIDEO", ["SKIPPED"]),
-        sourceTotal: count("SOURCE"), loaded: count("SOURCE", ["DONE", "FAILED"]), total: count("VIDEO"), scanned: count("VIDEO", ["DONE", "FAILED", "SKIPPED"]), failed: count("VIDEO", ["FAILED"]), sourceFailed: count("SOURCE", ["FAILED"]),
+        sourceTotal: count("SOURCE"), loaded: count("SOURCE", ["DONE", "FAILED"]), initialTotal: count("VIDEO"), removed, total: count("VIDEO") - removed, scanned: count("VIDEO", ["DONE", "FAILED"]) - removedScanned, failed: count("VIDEO", ["FAILED"]), sourceFailed: count("SOURCE", ["FAILED"]),
         frames: groups.reduce((n, g) => n + (g._sum.framesDone || 0), 0), cached: groups.reduce((n, g) => n + (g._sum.cacheHits || 0), 0), current, failures },
       rows: ids.map(rowId => {
         const source = sources.find(s => s.refId === rowId);
@@ -119,6 +125,10 @@ export class MetadataVideoJobs {
   }
 
   async finishJobs() {
+    // Retire already mapped videos from existing snapshots, including other jobs.
+    await this.prisma.$executeRaw`UPDATE "MetadataVideoTask" t SET status='SKIPPED', "updatedAt"=CURRENT_TIMESTAMP
+      WHERE t.kind='VIDEO' AND t.status='PENDING' AND EXISTS
+      (SELECT 1 FROM "WordPressMetadataSource" s WHERE s."targetVideoId"=t."refId" AND s.active=true)`;
     // Keep queue history, but never decode the remaining library after all usable
     // source rows are resolved. In-flight workers recheck rows before their next frame.
     await this.prisma.$executeRaw`UPDATE "MetadataVideoTask" t SET status='SKIPPED', "updatedAt"=CURRENT_TIMESTAMP

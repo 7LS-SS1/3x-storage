@@ -78,6 +78,9 @@ export class MetadataVideoProcessor {
       return prepared.filter(s => (!s.targetVideoId || s.targetVideoId === task.refId) && rows.some(r => r.id === s.rowId));
     };
     if (!(await pendingSources()).some(s => s.panels.length)) { await this.jobs.renew(task, { status: "SKIPPED", leaseToken: null }); return; }
+    if (await this.prisma.wordPressMetadataSource.count({ where: { targetVideoId: task.refId, active: true } })) {
+      await this.jobs.renew(task, { status: "SKIPPED", leaseToken: null }); return;
+    }
     const video = await this.prisma.video.findFirst({ where: { ...videoEligibility, id: task.refId }, select: { id: true, originalKey: true, files: { where: { role: "ORIGINAL" }, orderBy: { createdAt: "desc" }, take: 1, select: { storageKey: true } } } });
     const key = video?.files[0]?.storageKey || video?.originalKey;
     if (!key) throw new Error("ตรวจเฟรม: วิดีโอถูกเปลี่ยน/ลบ มีปกแล้ว หรือไม่มีไฟล์ต้นฉบับ");
@@ -96,6 +99,9 @@ export class MetadataVideoProcessor {
       let hits = 0;
       for (const [i, timeMs] of times.entries()) {
         if (this.stopping || !await this.jobs.renew(task)) throw new Interrupted();
+        if (await this.prisma.wordPressMetadataSource.count({ where: { targetVideoId: task.refId, active: true } })) {
+          await this.jobs.renew(task, { status: "SKIPPED", leaseToken: null }); return;
+        }
         const sources = await pendingSources();
         if (!sources.length) { await this.jobs.renew(task, { status: "DONE", leaseToken: null }); return; }
         let image = cached.get(timeMs);
@@ -119,7 +125,7 @@ export class MetadataVideoProcessor {
         }).filter(match => match.score >= job.threshold).sort((a,b) => (job.threshold === 0 ? 0 : b.score-a.score) || a.rowId.localeCompare(b.rowId));
         for (const match of ranked) {
           if (frameIdentity(task.refId, key, await this.storage.objectVersion(key)) !== identity) throw new Error("ตรวจเฟรม: ไฟล์เปลี่ยนระหว่างตรวจ กรุณาลองใหม่");
-          await this.prisma.$transaction(async tx => {
+          const applied = await this.prisma.$transaction(async tx => {
             const locked = await tx.$queryRaw<{ status: string }[]>`SELECT status FROM "MetadataVideoJob" WHERE id=${job.id} FOR UPDATE`;
             if (locked[0]?.status !== "RUNNING") throw new Interrupted();
             const owned = await tx.metadataVideoTask.count({ where: { id: task.id, leaseToken: task.leaseToken, status: "RUNNING", leaseUntil: { gt: new Date() } } });
@@ -131,7 +137,13 @@ export class MetadataVideoProcessor {
             await tx.metadataVideoTask.update({ where: { id: task.id }, data: { error: null, dataJson: { appliedRowId: match.rowId } } });
             return true;
           }, { timeout: 20_000 });
-          // Keep checking pending source rows; several posts may share this video.
+          if (applied) {
+            await this.jobs.renew(task, { status: "DONE", error: null, leaseToken: null });
+            return;
+          }
+          if (await this.prisma.wordPressMetadataSource.count({ where: { targetVideoId: task.refId, active: true } })) {
+            await this.jobs.renew(task, { status: "SKIPPED", leaseToken: null }); return;
+          }
         }
       }
       if (!await this.jobs.renew(task, { status: "DONE", error: null, leaseToken: null })) throw new Interrupted();
