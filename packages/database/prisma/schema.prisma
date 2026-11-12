@@ -484,7 +484,7 @@ model MetadataImportRow {
   previewToken     String?
   previewActorId   String?
   createdAt        DateTime @default(now())
-  change           MetadataChange?
+  changes          MetadataChange[]
 
   @@unique([batchId, ordinal])
   @@index([batchId, status])
@@ -515,7 +515,7 @@ model WordPressMetadataSource {
 
 model MetadataChange {
   id             String @id @default(cuid())
-  rowId          String @unique
+  rowId          String
   row            MetadataImportRow @relation(fields: [rowId], references: [id], onDelete: Restrict)
   sourceId       String
   source         WordPressMetadataSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
@@ -532,6 +532,7 @@ model MetadataChange {
   revertedAt     DateTime?
   revertedById   String?
 
+  @@index([rowId])
   @@index([videoId, createdAt])
   @@index([createdAt])
 }

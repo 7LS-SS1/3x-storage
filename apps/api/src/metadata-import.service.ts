@@ -36,8 +36,8 @@ export class MetadataImportService {
     if (!actor) throw new ConflictException("ผู้เริ่มงานไม่มีสิทธิ์ผู้ดูแลแล้ว");
     await tx.$queryRaw`SELECT id FROM "MetadataImportRow" WHERE id=${rowId} FOR UPDATE`;
     const row = await tx.metadataImportRow.findUnique({ where: { id: rowId } });
-    if (row?.status !== "PENDING") return false;
-    this.assertPending(row);
+    if (!row || !["PENDING", "ROLLED_BACK"].includes(row.status)) return false;
+    this.assertPending({ ...row, status: "PENDING" });
     if (row.batchId !== job.batchId) throw new ConflictException("รายการไม่ได้อยู่ในงานนี้");
     await this.lockVideoAndSource(tx, videoId, row.siteUrl!, row.postId!);
     // Recheck after acquiring the video lock: only one concurrent job may consume it.

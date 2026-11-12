@@ -151,6 +151,32 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
     expect(await db.video.count()).toBe(2299);
   });
 
+  it("includes 111 reverted rows plus one pending row, excluding 30 applied rows", async () => {
+    await db.metadataImportRow.createMany({data:Array.from({length:141},(_,i)=>({id:`restored-${i}`,batchId:"batch",ordinal:i+2,siteUrl:"https://example.test",postId:String(i+2),rawJson:{},normalizedJson:{},errorsJson:[],warningsJson:[],status:i<111?"ROLLED_BACK":"APPLIED"}))});
+    await jobs.start("batch","admin",{threshold:60});
+    expect((await jobs.status("batch","admin",1)).job).toMatchObject({sourceTotal:112,applied:30});
+  });
+
+  it("reapplies a reverted row across repeated rounds while preserving every audit and preventing stale undo", async () => {
+    const imports=new MetadataImportService(db as never);
+    await jobs.start("batch","admin",{threshold:0});await drain();
+    const old=await db.metadataChange.findFirstOrThrow();
+    await imports.rollback({id:"admin",name:"Fixture admin"},old.id);
+    await jobs.start("batch","admin",{threshold:0,restart:true});
+    expect((await jobs.status("batch","admin",1)).job?.sourceTotal).toBe(1);
+    await drain();
+    expect(await db.metadataChange.count()).toBe(2);
+    const current=await db.metadataChange.findFirstOrThrow({where:{revertedAt:null}});
+    expect(current.id).not.toBe(old.id);
+    await imports.rollback({id:"admin",name:"Fixture admin"},old.id);
+    expect((await db.metadataImportRow.findUniqueOrThrow({where:{id:"batch-row"}})).status).toBe("APPLIED");
+    await imports.rollback({id:"admin",name:"Fixture admin"},current.id);
+    await jobs.start("batch","admin",{threshold:0,restart:true});await drain();
+    expect(await db.metadataChange.count()).toBe(3);
+    expect(await db.metadataChange.count({where:{revertedAt:null}})).toBe(1);
+    expect(await db.metadataChange.count({where:{revertedAt:{not:null}}})).toBe(2);
+  });
+
   it("fences two jobs that already claimed the same video", async () => {
     await batch('other');
     await db.metadataImportRow.update({where:{id:'other-row'},data:{postId:'2'}});

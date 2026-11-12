@@ -74,7 +74,7 @@ export class MetadataVideoProcessor {
     const job = await this.prisma.metadataVideoJob.findUniqueOrThrow({ where: { id: task.jobId } });
     const prepared = await this.sources(job.id, job.updatedAt);
     const pendingSources = async () => {
-      const rows = await this.prisma.metadataImportRow.findMany({ where: { id: { in: prepared.map(s => s.rowId) }, status: "PENDING" }, select: { id: true, siteUrl: true, postId: true } });
+      const rows = await this.prisma.metadataImportRow.findMany({ where: { id: { in: prepared.map(s => s.rowId) }, status: { in: ["PENDING", "ROLLED_BACK"] } }, select: { id: true, siteUrl: true, postId: true } });
       return prepared.filter(s => (!s.targetVideoId || s.targetVideoId === task.refId) && rows.some(r => r.id === s.rowId));
     };
     if (!(await pendingSources()).some(s => s.panels.length)) { await this.jobs.renew(task, { status: "SKIPPED", leaseToken: null }); return; }

@@ -112,7 +112,7 @@ describe.skipIf(!db)("Metadata import PostgreSQL + authenticated HTTP", () => {
     expect(await prisma.wordPressMetadataSource.count({where:{siteUrl:data.site_url,postId:'1'}})).toBe(1);
     expect(await prisma.metadataChange.count({where:{rowId:r.id}})).toBe(1);
     const source=await prisma.wordPressMetadataSource.findUniqueOrThrow({where:{siteUrl_postId:{siteUrl:data.site_url,postId:'1'}}});expect(source.rawJson).toEqual({record:data});
-    const change=await prisma.metadataChange.findUniqueOrThrow({where:{rowId:r.id}});expect(change.actorUserId).toBe(actor.id);expect(change.rowId).toBe(r.id);
+    const change=await prisma.metadataChange.findFirstOrThrow({where:{rowId:r.id,revertedAt:null}});expect(change.actorUserId).toBe(actor.id);expect(change.rowId).toBe(r.id);
     await service.rollback(actor,change.id);expect((await prisma.video.findUniqueOrThrow({where:{id:video}})).title).toBe(before.title);expect((await service.rollback(actor,change.id)).replay).toBe(true);
   });
   it("skips empty by default, supports explicit clear, rejects stale and cross-actor previews", async () => {

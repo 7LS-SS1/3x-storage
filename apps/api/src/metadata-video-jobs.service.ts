@@ -29,7 +29,7 @@ export class MetadataVideoJobs {
         if (locked[0]?.status === "RUNNING") throw new ConflictException("หยุดงานเดิมก่อนเริ่มรอบใหม่");
       }
       if (!await tx.metadataImportBatch.findUnique({ where: { id: batchId }, select: { id: true } })) throw new NotFoundException("ไม่พบ batch");
-      const rows = await tx.metadataImportRow.findMany({ where: { batchId, status: "PENDING" }, select: { id: true }, take: 501 });
+      const rows = await tx.metadataImportRow.findMany({ where: { batchId, status: { in: ["PENDING", "ROLLED_BACK"] } }, select: { id: true }, take: 501 });
       if (rows.length > 500) throw new BadRequestException("batch ต้องไม่เกิน 500 รายการ");
       if (old) await tx.metadataVideoJob.delete({ where: { id: old.id } });
       const job = await tx.metadataVideoJob.create({ data: { batchId, actorUserId, threshold, samples } });
@@ -134,7 +134,7 @@ export class MetadataVideoJobs {
     await this.prisma.$executeRaw`UPDATE "MetadataVideoTask" t SET status='SKIPPED', "updatedAt"=CURRENT_TIMESTAMP
       FROM "MetadataVideoJob" j WHERE j.id=t."jobId" AND j.status='RUNNING' AND t.kind='VIDEO' AND t.status='PENDING'
       AND NOT EXISTS (SELECT 1 FROM "MetadataVideoTask" s JOIN "MetadataImportRow" r ON r.id=s."refId"
-        WHERE s."jobId"=j.id AND s.kind='SOURCE' AND s.status IN ('PENDING','RUNNING','DONE') AND r.status='PENDING')`;
+        WHERE s."jobId"=j.id AND s.kind='SOURCE' AND s.status IN ('PENDING','RUNNING','DONE') AND r.status IN ('PENDING','ROLLED_BACK'))`;
     await this.prisma.$executeRaw`UPDATE "MetadataVideoJob" j SET status='COMPLETED', "updatedAt"=CURRENT_TIMESTAMP WHERE j.status='RUNNING'
       AND NOT EXISTS (SELECT 1 FROM "MetadataVideoTask" t WHERE t."jobId"=j.id AND t.status NOT IN ('DONE','FAILED','SKIPPED'))`;
   }
