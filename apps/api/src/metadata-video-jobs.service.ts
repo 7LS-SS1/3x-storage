@@ -6,7 +6,7 @@ import { PrismaService } from "./prisma.service";
 import { AdminSessionGuard, CsrfGuard, type AdminRequest } from "./admin-auth.guard";
 import { MetadataAdminGuard } from "./metadata-import.controller";
 
-export const videoJobInput = z.object({ threshold: z.number().int().min(0).max(100).default(80), samples: z.union([z.literal(12), z.literal(30), z.literal(60)]).default(30), restart: z.boolean().default(false) }).strict();
+export const videoJobInput = z.object({ threshold: z.number().int().min(0).max(100).default(0), samples: z.union([z.literal(12), z.literal(30), z.literal(60)]).default(30), restart: z.boolean().default(false) }).strict();
 export const videoEligibility = { deletedAt: null, posterKey: null, status: { in: ["UPLOADED", "PROCESSING", "READY"] as ("UPLOADED" | "PROCESSING" | "READY")[] } };
 export const LEASE_MS = 90_000;
 export type ClaimedTask = MetadataVideoTask & { leaseToken: string };

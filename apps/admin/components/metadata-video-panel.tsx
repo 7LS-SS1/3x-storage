@@ -7,16 +7,16 @@ export function MetadataVideoPanel({ scan, samples, setSamples }: {
   scan: ReturnType<typeof useMetadataVideoScan>; samples: number;
   setSamples: (n: number) => void;
 }) {
-  const [threshold, setThreshold] = useState(80);
+  const [threshold, setThreshold] = useState(0);
   const { job, loading, busy, error } = scan;
   const running = job?.status === "RUNNING", disabled = loading || busy;
   const stale = running && Date.now() - new Date(job.lastActivityAt).getTime() > 90_000;
   return <section className={styles.note} aria-label="ตรวจจับด้วยวิดีโอ">
     <h3>ตรวจจับด้วยวิดีโอ</h3>
     <p>ตรวจวิดีโอที่ไม่มีรูปปกเป็นงานเบื้องหลัง ปิดแท็บได้ เปิด batch เดิมเพื่อดูผลหรือทำต่อ ข้อมูลเฟรมที่อ่านแล้วใช้ซ้ำได้ใน batch อื่นเมื่อไฟล์วิดีโอยังเป็นเวอร์ชันเดิม</p>
-    <p>คะแนนผ่านเกณฑ์ที่เลือก จะบันทึกชื่อเรื่อง/คำอธิบายทันที ไม่ต้องเล่นตรวจหรืออนุมัติ ใช้คู่แรกที่ผ่านเกณฑ์ ไม่รอคู่คะแนนสูงสุดทั่วคลัง หลายบทความใช้วิดีโอเดียวกันได้ และจะตรวจต่อเฉพาะบทความที่ยังไม่จับคู่</p>
+    <p>ค่าเริ่มต้นรับทุกคะแนนเฟรม (0–100) และบันทึกชื่อเรื่อง/คำอธิบายทันที ไม่ต้องเล่นตรวจหรืออนุมัติ ใช้คู่แรกที่ผ่านเกณฑ์ ไม่รอคู่คะแนนสูงสุดทั่วคลัง หลายบทความใช้วิดีโอเดียวกันได้ และจะตรวจต่อเฉพาะบทความที่ยังไม่จับคู่</p>
     <div className={styles.controls}>
-      <label>คะแนนขั้นต่ำสำหรับรอบใหม่<select aria-label="คะแนนขั้นต่ำ" value={threshold} disabled={disabled || running} onChange={e => setThreshold(Number(e.target.value))}>{[100,95,90,85,80,75,70,60,50,40,30,20,10,0].map(n => <option key={n} value={n}>{n === 0 ? "ไม่สนความเหมือน — จับคู่แรกและบันทึกทันที" : `${n}/100`}</option>)}</select></label>
+      <label>คะแนนขั้นต่ำสำหรับรอบใหม่<select aria-label="คะแนนขั้นต่ำ" value={threshold} disabled={disabled || running} onChange={e => setThreshold(Number(e.target.value))}>{[100,95,90,85,80,75,70,60,50,40,30,20,10,0].map(n => <option key={n} value={n}>{n === 0 ? "ทุกคะแนน (0–100) — บันทึกอัตโนมัติ" : `${n}/100`}</option>)}</select></label>
       {threshold === 0 && <p>โหมดนี้บันทึกคู่แรกที่ตรวจได้ แม้เนื้อหาไม่เกี่ยวกัน ไม่ได้ยืนยันว่าเป็นวิดีโอเดียวกัน</p>}
       <label>จำนวนเฟรมต่อวิดีโอสำหรับรอบใหม่<select aria-label="จำนวนเฟรม" value={samples} disabled={disabled || running} onChange={e => setSamples(Number(e.target.value))}>{[12,30,60].map(n => <option key={n} value={n}>{n} เฟรม</option>)}</select></label>
     </div>

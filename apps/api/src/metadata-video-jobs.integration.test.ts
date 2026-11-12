@@ -56,7 +56,7 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
   it("starts once, snapshots eligible videos, gates sources and caps concurrent claims", async()=>{
     await createVideo("video2"); await createVideo("with-poster");
     await db.video.update({where:{id:"with-poster"},data:{posterKey:"poster.jpg"}});
-    const starts=await Promise.all([jobs.start("batch","admin",{samples:12}),jobs.start("batch","admin",{samples:12})]);
+    const starts=await Promise.all([jobs.start("batch","admin",{samples:12,threshold:80}),jobs.start("batch","admin",{samples:12,threshold:80})]);
     expect(starts[0]).toEqual(starts[1]); expect(await db.metadataVideoTask.count()).toBe(3);
     const source=await jobs.claim(2); expect(source?.kind).toBe("SOURCE"); expect(await jobs.claim(2)).toBeNull();
     await processor.process(source!);
@@ -69,7 +69,7 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
   });
 
   it("pauses after the current frame and a new worker resumes without decoding that frame again", async()=>{
-    await jobs.start("batch","admin",{samples:12}); await next();
+    await jobs.start("batch","admin",{samples:12,threshold:80}); await next();
     frames.frame.mockImplementationOnce(async()=>{await jobs.control("batch","admin","pause");return image;});
     await next();
     expect(await db.metadataVideoFrame.count()).toBe(1);
@@ -86,12 +86,12 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
   });
 
   it("reuses all frames across batches and invalidates the cache when the object ETag changes", async()=>{
-    const before=await db.video.findMany(); await jobs.start("batch","admin",{samples:12}); await drain();
+    const before=await db.video.findMany(); await jobs.start("batch","admin",{samples:12,threshold:80}); await drain();
     const coldReads=frames.frame.mock.calls.length;
-    await batch("second"); await jobs.start("second","admin",{samples:12}); await drain();
+    await batch("second"); await jobs.start("second","admin",{samples:12,threshold:80}); await drain();
     expect(frames.frame.mock.calls.length).toBe(coldReads);
     expect((await jobs.status("second","admin",1)).job?.cached).toBe(1);
-    version.etag='"v2"'; await batch("third"); await jobs.start("third","admin",{samples:12}); await drain();
+    version.etag='"v2"'; await batch("third"); await jobs.start("third","admin",{samples:12,threshold:80}); await drain();
     expect(frames.frame.mock.calls.length).toBe(coldReads+1);
     const after=await db.video.findMany(); expect(after[0]?.title).toBe("Imported fixture title");
     expect({...after[0],title:before[0]!.title,updatedAt:before[0]!.updatedAt}).toEqual(before[0]);
@@ -101,7 +101,7 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
   });
 
   it("fences expired workers and recovers their queued work after restart", async()=>{
-    await jobs.start("batch","admin",{samples:12}); const first=await jobs.claim(2);
+    await jobs.start("batch","admin",{samples:12,threshold:80}); const first=await jobs.claim(2);
     await db.metadataVideoTask.update({where:{id:first!.id},data:{leaseUntil:new Date(0)}});
     const second=await jobs.claim(2); expect(second!.id).toBe(first!.id); expect(second!.leaseToken).not.toBe(first!.leaseToken);
     expect(await jobs.renew(first!,{status:"DONE"})).toBe(false);
@@ -114,7 +114,7 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
   it.each([79.9,80])("automatically applies at 80 inclusive, never below it (%s)", async score => {
     await db.metadataImportRow.update({where:{id:"batch-row"},data:{normalizedJson:{imageUrl:"https://example.test/fixture.png",title:"Imported fixture title",description:"Imported description"}}});
     vi.spyOn(images,"compareCovers").mockReturnValue({score,exact:false});
-    await jobs.start("batch","admin",{samples:12}); await drain();
+    await jobs.start("batch","admin",{samples:12,threshold:80}); await drain();
     expect(await db.metadataChange.count()).toBe(score>=80?1:0);
     expect(frames.frame).toHaveBeenCalledTimes(score>=80?1:12);
     expect((await db.metadataImportRow.findUniqueOrThrow({where:{id:"batch-row"}})).status).toBe(score>=80?"APPLIED":"PENDING");
@@ -144,7 +144,7 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
 
   it("records automatic proof and before/after values, keeps empty description, and rolls back with the existing flow", async()=>{
     const before=await db.video.findUniqueOrThrow({where:{id:"video"}});
-    await jobs.start("batch","admin",{samples:12});await drain();
+    await jobs.start("batch","admin",{samples:12,threshold:80});await drain();
     const change=await db.metadataChange.findFirstOrThrow();
     expect(change.actorUserId).toBe("admin");expect(change.fieldsJson).toEqual(["title"]);
     expect((await jobs.status("batch","admin",1)).rows[0]?.autoBasis).toBe("video_frame_similarity");
@@ -158,7 +158,7 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
   });
 
   it("does not automatically write after the initiating administrator loses permission", async()=>{
-    await jobs.start("batch","admin",{samples:12});await next();
+    await jobs.start("batch","admin",{samples:12,threshold:80});await next();
     await db.user.update({where:{id:"admin"},data:{role:"STAFF"}});await drain();
     expect(await db.metadataChange.count()).toBe(0);
     expect((await db.video.findUniqueOrThrow({where:{id:"video"}})).title).toBe("Generic scene");
@@ -168,19 +168,19 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
   it("respects an explicit target and allows another post to share the same video", async()=>{
     await createVideo("video2");
     await db.metadataImportRow.update({where:{id:"batch-row"},data:{normalizedJson:{imageUrl:"https://example.test/fixture.png",title:"Explicit target title",targetVideoId:"video2"}}});
-    await jobs.start("batch","admin",{samples:12});await drain();
+    await jobs.start("batch","admin",{samples:12,threshold:80});await drain();
     expect((await db.metadataChange.findFirstOrThrow()).videoId).toBe("video2");
     await batch("different-post");
     await db.metadataImportRow.update({where:{id:"different-post-row"},data:{postId:"2",normalizedJson:{imageUrl:"https://example.test/fixture.png",title:"Must not overwrite",targetVideoId:"video2"}}});
     const reads=frames.frame.mock.calls.length;
-    await jobs.start("different-post","admin",{samples:12});await drain();
+    await jobs.start("different-post","admin",{samples:12,threshold:80});await drain();
     expect(frames.frame.mock.calls.length).toBe(reads);
     expect(await db.metadataChange.count()).toBe(2);
     expect((await db.video.findUniqueOrThrow({where:{id:"video2"}})).title).toBe("Must not overwrite");
   });
 
   it("waits for in-flight work to acknowledge pause before retrying failed sources", async()=>{
-    await jobs.start("batch","admin",{samples:12}); await next();
+    await jobs.start("batch","admin",{samples:12,threshold:80}); await next();
     const task=await jobs.claim(2); expect(task?.kind).toBe("VIDEO");
     await jobs.control("batch","admin","pause");
     await expect(jobs.control("batch","admin","retry")).rejects.toThrow("รอเฟรมปัจจุบัน");
@@ -190,7 +190,7 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
   });
 
   it("rolls back a failed result transaction, keeps frame checkpoints and retries without decoding again", async()=>{
-    await jobs.start("batch","admin",{samples:12}); await next();
+    await jobs.start("batch","admin",{samples:12,threshold:80}); await next();
     await db.$executeRawUnsafe(`CREATE FUNCTION fixture_fail_match() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture failure'; END $$`);
     await db.$executeRawUnsafe(`CREATE TRIGGER fixture_fail_match BEFORE INSERT ON "MetadataVideoMatch" FOR EACH ROW EXECUTE FUNCTION fixture_fail_match()`);
     try { await next(); expect(await db.metadataVideoMatch.count()).toBe(0); expect(await db.metadataVideoTask.count({where:{kind:"VIDEO",status:"DONE"}})).toBe(0); expect(await db.metadataVideoFrame.count()).toBe(1);expect(await db.metadataChange.count()).toBe(0);expect((await db.video.findUniqueOrThrow({where:{id:"video"}})).title).toBe("Generic scene"); }
@@ -201,7 +201,7 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
 
   it("retries failed source images and re-compares videos that finished while no source was usable", async()=>{
     vi.mocked(images.fetchCoverBytes).mockRejectedValue(new Error("fixture offline"));
-    await jobs.start("batch","admin",{samples:12}); await drain();
+    await jobs.start("batch","admin",{samples:12,threshold:80}); await drain();
     expect((await jobs.status("batch","admin",1)).job).toMatchObject({sourceFailed:1,status:"COMPLETED"});
     expect(frames.frame).not.toHaveBeenCalled();
     vi.mocked(images.fetchCoverBytes).mockResolvedValue(bytes);
@@ -212,7 +212,7 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
 
   it("assigns a row only once under concurrent completion, skips remaining clips, and retains the cache on restart", async()=>{
     for(let i=2;i<=7;i++)await createVideo("video"+i);
-    await jobs.start("batch","admin",{samples:12}); await next();
+    await jobs.start("batch","admin",{samples:12,threshold:80}); await next();
     for(let i=0;i<4;i++){const a=await jobs.claim(2),b=await jobs.claim(2);await Promise.all([a,b].filter(Boolean).map(t=>processor.process(t!)));}
     expect(await db.metadataVideoMatch.count()).toBe(1);expect(await db.metadataChange.count()).toBe(1);expect(frames.frame.mock.calls.length).toBeLessThanOrEqual(2);expect(await db.metadataVideoTask.count({where:{status:"SKIPPED"}})).toBeGreaterThan(0);
     const old=(await jobs.status("batch","admin",1)).job!;
