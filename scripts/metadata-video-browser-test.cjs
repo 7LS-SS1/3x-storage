@@ -20,8 +20,8 @@ const {chromium}=admin('@playwright/test'),sharp=api('sharp');
   else if(req.url.includes('/review?page=')){const page=Number(new URL(req.url,'http://localhost').searchParams.get('page'));data={batch,rows:rows.slice((page-1)*25,page*25),total:26,page};}
 
   else if(req.url.endsWith('/video-job') && req.method==='POST'){
-   assert.equal(JSON.parse(body).threshold,80);assert.equal(JSON.parse(body).samples,12);
-   job={id:'job',status:'RUNNING',threshold:80,samples:12,createdAt:new Date().toISOString(),lastActivityAt:new Date().toISOString(),loaded:26,sourceTotal:26,total:1,scanned:0,frames:1,cached:0,applied:0,skipped:0,failed:0,sourceFailed:0,current:[{refId:'generic-video',framesDone:1}],failures:[]};
+   assert.equal(JSON.parse(body).threshold,0);assert.equal(JSON.parse(body).samples,12);
+   job={id:'job',status:'RUNNING',threshold:0,samples:12,createdAt:new Date().toISOString(),lastActivityAt:new Date().toISOString(),loaded:26,sourceTotal:26,total:1,scanned:0,frames:1,cached:0,applied:0,skipped:0,failed:0,sourceFailed:0,current:[{refId:'generic-video',framesDone:1}],failures:[]};
    data={jobId:'job'};
   } else if(req.url.includes('/video-job?page=')){
    const p=Number(new URL(req.url,'http://localhost').searchParams.get('page'));
@@ -41,6 +41,7 @@ const {chromium}=admin('@playwright/test'),sharp=api('sharp');
   await page.getByRole('heading',{name:'ตรวจจับด้วยวิดีโอ',exact:true}).waitFor();
   assert.equal(calls.some(c=>c.url.includes('scan')),false);
   await page.getByLabel('จำนวนเฟรม',{exact:true}).selectOption('12');
+  await page.getByLabel('คะแนนขั้นต่ำ',{exact:true}).selectOption('0');
   await page.getByRole('button',{name:'เริ่มตรวจจับด้วยวิดีโอ',exact:true}).click();
 
   await page.getByText(/กำลังตรวจเบื้องหลัง/).waitFor();
@@ -56,7 +57,7 @@ const {chromium}=admin('@playwright/test'),sharp=api('sharp');
   await page.getByText(/จบรอบตรวจแล้ว/).waitFor();
 
 
-  await page.getByText('บันทึกชื่อเรื่อง/คำอธิบายอัตโนมัติจากไฟล์ เพราะคะแนนเฟรมผ่าน 80/100 — ย้อนคืนได้ในประวัติ',{exact:true}).waitFor();
+  await page.getByText('บันทึกชื่อเรื่อง/คำอธิบายอัตโนมัติจากไฟล์ เพราะผ่านเกณฑ์การจับคู่ที่ตั้งไว้ — ย้อนคืนได้ในประวัติ',{exact:true}).waitFor();
   const starts=calls.filter(c=>c.method==='POST'&&c.url.endsWith('/video-job')).length;
   await page.getByRole('button',{name:'ถัดไป',exact:true}).click();
   await page.getByRole('heading',{name:/รายการ 26.*บันทึกแล้ว/}).waitFor();
@@ -66,6 +67,6 @@ const {chromium}=admin('@playwright/test'),sharp=api('sharp');
   await page.getByText(/Video ID: generic-video.*86.4/).waitFor();
   await page.screenshot({path:path.join(out,'video-mode-desktop.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'video-mode-mobile.png'),fullPage:true});
-  assert.deepEqual(errors,[]);console.log('METADATA_VIDEO_BROWSER_OK background job resumes after reload, pause/resume, no duplicate start, cross-page persisted results, automatic applied status without approval/player requests, fixed 80 threshold, proof visible');
+  assert.deepEqual(errors,[]);console.log('METADATA_VIDEO_BROWSER_OK background job resumes after reload, pause/resume, no duplicate start, cross-page persisted results, automatic applied status without approval/player requests, selected 0 threshold, proof visible');
  }finally{await browser.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

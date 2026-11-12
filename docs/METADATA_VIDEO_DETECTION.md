@@ -98,3 +98,11 @@ FFmpeg fixture: build scripts/metadata-video-runtime.Dockerfile แล้ว mou
 Browser fixture ใช้ test-results/metadata-video/generic.mp4 จาก FFmpeg testsrc2 ขนาด320x240 12fps ยาว6วินาที/libx264/yuv420p หรือกำหนด METADATA_VIDEO_FIXTURE
 
 อ้างอิง [FFmpeg options](https://ffmpeg.org/ffmpeg.html), [FFmpeg protocols](https://ffmpeg.org/ffmpeg-protocols.html), [PostgreSQL SELECT / SKIP LOCKED](https://www.postgresql.org/docs/current/sql-select.html), [R2 S3 compatibility: GetObject If-Match / Range](https://developers.cloudflare.com/r2/api/s3/api/)
+
+
+## Update 2026-11-12: configurable threshold and shared videos
+This section supersedes the fixed-80 and one-to-one behavior above. New jobs accept an integer threshold 0–100 (default 80). The UI offers 100/95/90/85/80/75/70/60/50/40/30/20/10/0. Zero explicitly means accept the first eligible candidate without a similarity requirement; scores are still recorded, and this does not establish content identity. Existing jobs keep their stored threshold; pause and start a new round to change it.
+
+Multiple source posts may map to one video. A source row is still applied only once; explicit target IDs and existing source-to-video mappings remain enforced. All qualifying rows in a frame are applied, then remaining pending rows may be checked against later frames. One video's title/description are the last committed nonblank values; all row audit records remain. Undo shared-video updates in reverse order because existing stale-value protection remains in force. Updated export includes every source row, with its original RetroTube embed in old_embed, instead of deduplicating by video ID.
+
+No database migration or R2 mutation is required for this update. Deploy API/admin/metadata-worker together; drain/pause running tasks for worker replacement and retain checkpoints. Install WordPress plugin 1.1.4 for the fifth CSV column. Production deployment, real R2 matching and production WordPress writes have not been tested for this update.

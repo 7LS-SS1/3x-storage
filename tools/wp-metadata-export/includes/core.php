@@ -2,7 +2,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 final class WPMB_Export {
-    const VERSION = '1.1.3';
+    const VERSION = '1.1.4';
     const BATCH = 50;
 
     // Evidence and provenance are documented in docs/WORDPRESS_METADATA_EXPORT.md.

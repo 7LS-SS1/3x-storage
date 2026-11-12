@@ -75,8 +75,7 @@ export class MetadataVideoProcessor {
     const prepared = await this.sources(job.id, job.updatedAt);
     const pendingSources = async () => {
       const rows = await this.prisma.metadataImportRow.findMany({ where: { id: { in: prepared.map(s => s.rowId) }, status: "PENDING" }, select: { id: true, siteUrl: true, postId: true } });
-      const mapped = await this.prisma.wordPressMetadataSource.findMany({ where: { targetVideoId: task.refId, active: true }, select: { siteUrl: true, postId: true } });
-      return prepared.filter(s => (!s.targetVideoId || s.targetVideoId === task.refId) && rows.some(r => r.id === s.rowId && (!mapped.length || mapped.every(m => m.siteUrl === r.siteUrl && m.postId === r.postId))));
+      return prepared.filter(s => (!s.targetVideoId || s.targetVideoId === task.refId) && rows.some(r => r.id === s.rowId));
     };
     if (!(await pendingSources()).some(s => s.panels.length)) { await this.jobs.renew(task, { status: "SKIPPED", leaseToken: null }); return; }
     const video = await this.prisma.video.findFirst({ where: { ...videoEligibility, id: task.refId }, select: { id: true, originalKey: true, files: { where: { role: "ORIGINAL" }, orderBy: { createdAt: "desc" }, take: 1, select: { storageKey: true } } } });
@@ -98,7 +97,7 @@ export class MetadataVideoProcessor {
       for (const [i, timeMs] of times.entries()) {
         if (this.stopping || !await this.jobs.renew(task)) throw new Interrupted();
         const sources = await pendingSources();
-        if (!sources.length) { await this.jobs.renew(task, { status: "SKIPPED", leaseToken: null }); return; }
+        if (!sources.length) { await this.jobs.renew(task, { status: "DONE", leaseToken: null }); return; }
         let image = cached.get(timeMs);
         if (image) hits++;
         else {
@@ -113,14 +112,14 @@ export class MetadataVideoProcessor {
         await this.prisma.metadataVideoIndex.updateMany({ where: { id: identity, leaseToken: task.leaseToken }, data: { duration, leaseUntil: new Date(Date.now() + LEASE_MS) } });
         if (!await this.jobs.renew(task, { framesDone: i + 1, cacheHits: hits })) throw new Interrupted();
         if (cached.has(timeMs)) await this.prisma.metadataVideoFrame.updateMany({ where: { identity, timeMs }, data: { lastUsedAt: new Date() } });
-        if (!detailedImage(image)) continue;
+        if (job.threshold > 0 && !detailedImage(image)) continue;
         const ranked = sources.map(source => {
           const best = source.panels.map(panel => ({ panel: panel.label, score: compareCovers(panel.image, image!).score })).sort((a,b) => b.score-a.score)[0];
           return { rowId: source.rowId, ...best! };
-        }).filter(match => match.score >= 80).sort((a,b) => b.score-a.score || a.rowId.localeCompare(b.rowId));
+        }).filter(match => match.score >= job.threshold).sort((a,b) => (job.threshold === 0 ? 0 : b.score-a.score) || a.rowId.localeCompare(b.rowId));
         for (const match of ranked) {
           if (frameIdentity(task.refId, key, await this.storage.objectVersion(key)) !== identity) throw new Error("ตรวจเฟรม: ไฟล์เปลี่ยนระหว่างตรวจ กรุณาลองใหม่");
-          const applied = await this.prisma.$transaction(async tx => {
+          await this.prisma.$transaction(async tx => {
             const locked = await tx.$queryRaw<{ status: string }[]>`SELECT status FROM "MetadataVideoJob" WHERE id=${job.id} FOR UPDATE`;
             if (locked[0]?.status !== "RUNNING") throw new Interrupted();
             const owned = await tx.metadataVideoTask.count({ where: { id: task.id, leaseToken: task.leaseToken, status: "RUNNING", leaseUntil: { gt: new Date() } } });
@@ -129,10 +128,10 @@ export class MetadataVideoProcessor {
             if (!saved) return false;
             await tx.metadataVideoMatch.deleteMany({ where: { jobId: job.id, rowId: match.rowId } });
             await tx.metadataVideoMatch.create({ data: { jobId: job.id, rowId: match.rowId, videoId: task.refId, score: match.score, seconds: timeMs / 1000, panel: match.panel, thumbnail: image!.thumbnail } });
-            await tx.metadataVideoTask.update({ where: { id: task.id }, data: { status: "DONE", error: null, leaseToken: null, leaseUntil: null, dataJson: { appliedRowId: match.rowId } } });
+            await tx.metadataVideoTask.update({ where: { id: task.id }, data: { error: null, dataJson: { appliedRowId: match.rowId } } });
             return true;
           }, { timeout: 20_000 });
-          if (applied) return; // No remaining frame reads for this clip after a committed pair.
+          // Keep checking pending source rows; several posts may share this video.
         }
       }
       if (!await this.jobs.renew(task, { status: "DONE", error: null, leaseToken: null })) throw new Interrupted();

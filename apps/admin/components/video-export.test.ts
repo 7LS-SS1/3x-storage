@@ -29,3 +29,9 @@ describe("video CSV export", () => {
     expect(csv).toContain('"\'+SUM(1,1)"');
   });
 });
+
+it("includes old_embed only for metadata exports and escapes raw HTML", () => {
+ const csv=createVideosCsv([{title:'Changed',category:'',embedUrl:'https://new.example/embed/a',thumbnailUrl:'',oldEmbed:'<iframe src="https://old.example/embed/b"></iframe>'}]);
+ expect(csv.split('\r\n')[0]).toContain('url images,old_embed');
+ expect(csv).toContain('"<iframe src=""https://old.example/embed/b""></iframe>"');
+});

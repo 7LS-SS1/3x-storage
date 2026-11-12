@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("./poster-delivery-url",()=>({createPosterDeliveryUrl:()=>"https://media.example.test/poster"}));
-import { MetadataImportService } from "./metadata-import.service";
+import { MetadataImportService, sourceOldEmbed } from "./metadata-import.service";
 afterEach(()=>vi.unstubAllEnvs());
 const video=(id:string)=>({id,title:'ชื่อที่แก้แล้ว "ไทย"',publicId:`public-${id}`,posterKey:'poster',category:{name:'ทั่วไป'},files:[{id:'file',role:'ORIGINAL'}]});
 function setup(changes:any[],exists=true){
@@ -15,7 +15,7 @@ describe('export changed metadata batch',()=>{
   const changes=Array.from({length:30},(_,i)=>({fieldsJson:['title'],video:video(String(i))}));
   changes.push({fieldsJson:['description'],video:video('0')},{fieldsJson:[],video:video('noop')});
   const {service,tx}=setup(changes);const result=await service.exportChanged('batch');
-  expect(result.videos).toHaveLength(30);expect(result.videos[0]).toEqual({title:'ชื่อที่แก้แล้ว "ไทย"',category:'ทั่วไป',embedUrl:'https://player.example.test/embed/public-0',thumbnailUrl:'https://media.example.test/poster'});
+  expect(result.videos).toHaveLength(30);expect(result.videos[0]).toEqual({oldEmbed:'',title:'ชื่อที่แก้แล้ว "ไทย"',category:'ทั่วไป',embedUrl:'https://player.example.test/embed/public-0',thumbnailUrl:'https://media.example.test/poster'});
   expect(tx.metadataChange.findMany.mock.calls[0]![0]).toMatchObject({where:{revertedAt:null,row:{batchId:'batch',status:'APPLIED'},video:{deletedAt:null,status:{notIn:['DELETING','DELETED']}}}});
  });
  it('returns empty without exporting the whole library when no changed records exist',async()=>{
@@ -28,4 +28,11 @@ describe('export changed metadata batch',()=>{
   vi.stubEnv('PLAYER_URL','');vi.stubEnv('ADMIN_URL','');const {service}=setup([{fieldsJson:['title'],video:video('1')}]);
   await expect(service.exportChanged('batch')).rejects.toThrow('PLAYER_URL');
  });
+});
+
+it('preserves the evidenced old embed verbatim and never guesses missing or ambiguous fields', () => {
+ const value = '<iframe src="https://old.example/embed/a?x=1&amp;y=2"></iframe>';
+ expect(sourceOldEmbed({record:{video_embed_code_raw:[{source_field:'embed',value}]}})).toBe(value);
+ expect(sourceOldEmbed({record:{video_embed_code_raw:[{source_field:'other',value}]}})).toBe('');
+ expect(sourceOldEmbed({record:{video_embed_code_raw:[{source_field:'embed',value},{source_field:'embed',value}]}})).toBe('');
 });

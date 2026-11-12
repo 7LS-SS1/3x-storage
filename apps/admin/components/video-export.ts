@@ -1,4 +1,5 @@
 export type VideoExportRow = {
+  oldEmbed?: string;
   title: string;
   category: string;
   embedUrl: string;
@@ -15,15 +16,17 @@ function csvCell(value: string) {
 }
 
 export function createVideosCsv(videos: VideoExportRow[]) {
+  const includeOldEmbed = videos.some(video => video.oldEmbed !== undefined);
   const rows = videos.map(video =>
     [
       csvCell(video.title),
       csvCell(video.category),
       csvCell(iframeForVideo(video.embedUrl)),
-      csvCell(video.thumbnailUrl)
+      csvCell(video.thumbnailUrl),
+      ...(includeOldEmbed ? [csvCell(video.oldEmbed || "")] : [])
     ].join(",")
   );
-  return `\uFEFFtitle,หมวดหมู่,videos url,url images\r\n${rows.join("\r\n")}${rows.length ? "\r\n" : ""}`;
+  return `\uFEFFtitle,หมวดหมู่,videos url,url images${includeOldEmbed ? ",old_embed" : ""}\r\n${rows.join("\r\n")}${rows.length ? "\r\n" : ""}`;
 }
 
 export function downloadVideosCsv(videos: VideoExportRow[], filename: string) {

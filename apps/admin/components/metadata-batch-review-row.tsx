@@ -55,7 +55,7 @@ export function MetadataBatchReviewRow({ row, cover, disabled, prepared, onPrepa
     </div>
     {row.errorsJson.map((e, i) => <p className={styles.error} key={i}>{e}</p>)}
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    {autoStatus && <p>{autoStatus === "ROLLED_BACK" ? "ย้อนคืนแล้ว" : cover?.autoBasis === "other" ? `${statuses[autoStatus] || autoStatus} — ดูรายละเอียดในประวัติ` : `บันทึกชื่อเรื่อง/คำอธิบายอัตโนมัติจากไฟล์ เพราะ${cover?.autoBasis === "video_frame_similarity" ? "คะแนนเฟรมผ่าน 80/100" : "รูปปกตรงกันทุก byte"} — ย้อนคืนได้ในประวัติ`}</p>}
+    {autoStatus && <p>{autoStatus === "ROLLED_BACK" ? "ย้อนคืนแล้ว" : cover?.autoBasis === "other" ? `${statuses[autoStatus] || autoStatus} — ดูรายละเอียดในประวัติ` : `บันทึกชื่อเรื่อง/คำอธิบายอัตโนมัติจากไฟล์ เพราะ${cover?.autoBasis === "video_frame_similarity" ? "ผ่านเกณฑ์การจับคู่ที่ตั้งไว้" : "รูปปกตรงกันทุก byte"} — ย้อนคืนได้ในประวัติ`}</p>}
     {autoStatus && cover?.autoBasis === "video_frame_similarity" && cover.candidates.map(c => <p key={c.id}>Video ID: {c.id} • คะแนน {c.cover?.score}/100 • เฟรม {c.frame?.seconds.toFixed(1)} วินาที</p>)}
     {cover?.autoError && <p role="alert" className={styles.error}>ยังไม่ได้บันทึกอัตโนมัติ: {cover.autoError}</p>}
     {row.status === "PENDING" && !autoStatus && <>

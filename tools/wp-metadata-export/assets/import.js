@@ -78,6 +78,7 @@
       for(const row of result.rows){
         const card=node('section','',rows);card.style.cssText='background:white;padding:16px;margin:12px 0;border:1px solid #ccc;overflow-wrap:anywhere';
         node('h2',`${row.row}. ${row.title}`,card);
+        node('p',row.match_basis==='old_embed'?'จับคู่ด้วย URL ใน embed เดิม':'จับคู่ด้วยชื่อเรื่อง',card);
         node('p',`Post ID: ${row.post_id??'—'} • ${row.post_status??''} • ${row.status} ${row.reason??''}`,card);
         node('h3','embed ปัจจุบัน',card);node('pre',row.before??'(ไม่มีค่า)',card).style.whiteSpace='pre-wrap';
         node('h3','embed จากไฟล์',card);node('pre',row.after,card).style.whiteSpace='pre-wrap';

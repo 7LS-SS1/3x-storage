@@ -30,13 +30,15 @@ export class MetadataImportService {
   // with the matching evidence and task completion; there is no public score input.
   async applyFrameMatch(tx: Prisma.TransactionClient, actorId: string, rowId: string, videoId: string,
     proof: { jobId: string; score: number; seconds: number; panel: string; objectIdentity: string; storageKey: string }) {
-    if (!Number.isFinite(proof.score) || proof.score < 80) throw new ConflictException("คะแนนเฟรมไม่ผ่าน 80/100");
+    const job = await tx.metadataVideoJob.findUnique({ where: { id: proof.jobId } });
+    if (!job || job.actorUserId !== actorId || job.status !== "RUNNING" || !Number.isFinite(proof.score) || proof.score < job.threshold || proof.score > 100) throw new ConflictException("คะแนนเฟรมไม่ผ่านเกณฑ์ของงาน");
     const actor = await tx.user.findFirst({ where: { id: actorId, active: true, role: { in: ["ADMIN", "SYSTEM"] } }, select: { id: true, name: true } });
     if (!actor) throw new ConflictException("ผู้เริ่มงานไม่มีสิทธิ์ผู้ดูแลแล้ว");
     await tx.$queryRaw`SELECT id FROM "MetadataImportRow" WHERE id=${rowId} FOR UPDATE`;
     const row = await tx.metadataImportRow.findUnique({ where: { id: rowId } });
     if (row?.status !== "PENDING") return false;
     this.assertPending(row);
+    if (row.batchId !== job.batchId) throw new ConflictException("รายการไม่ได้อยู่ในงานนี้");
     await this.lockVideoAndSource(tx, videoId, row.siteUrl!, row.postId!);
     const n = row.normalizedJson as unknown as NormalizedMetadata;
     if (n.targetVideoId && n.targetVideoId !== videoId) return false;
@@ -44,8 +46,6 @@ export class MetadataImportService {
     if (!video || (video.files[0]?.storageKey || video.originalKey) !== proof.storageKey) throw new ConflictException("ไฟล์วิดีโอเปลี่ยนระหว่างตรวจ");
     const existing = await tx.wordPressMetadataSource.findUnique({ where: { siteUrl_postId: { siteUrl: row.siteUrl!, postId: row.postId! } } });
     if (existing?.active && existing.targetVideoId !== videoId) throw new ConflictException("ต้นทางเคยจับคู่กับวิดีโออื่นแล้ว");
-    // Serialize on Video so two workers/batches cannot assign different posts to it.
-    if (await tx.wordPressMetadataSource.findFirst({ where: { targetVideoId: videoId, active: true, NOT: { siteUrl: row.siteUrl!, postId: row.postId! } }, select: { id: true } })) return false;
     const before = (await this.snapshot(tx, videoId)).snapshot;
     const after: Values = { title: before.title, description: before.description, categoryId: before.categoryId, imageUrl: before.imageUrl };
     if (typeof n.title === "string" && n.title.trim()) after.title = n.title;
@@ -61,7 +61,7 @@ export class MetadataImportService {
     await this.writeValues(tx, videoId, after, changed);
     const saved = (await this.snapshot(tx, videoId)).snapshot;
     const source = await tx.wordPressMetadataSource.upsert({ where: { siteUrl_postId: { siteUrl: row.siteUrl!, postId: row.postId! } }, create: { siteUrl: row.siteUrl!, postId: row.postId!, targetVideoId: videoId, rawJson: json(row.rawJson), sourceHash }, update: { targetVideoId: videoId, rawJson: json(row.rawJson), sourceHash, active: true } });
-    const frameProof = { ...proof, basis: "video_frame_similarity", threshold: 80, verifiedAt: new Date().toISOString() };
+    const frameProof = { ...proof, basis: "video_frame_similarity", threshold: job.threshold, similarityIgnored: job.threshold === 0, verifiedAt: new Date().toISOString() };
     const change = await tx.metadataChange.create({ data: { rowId, sourceId: source.id, videoId, actorUserId: actor.id, actorName: actor.name, beforeJson: json(before), afterJson: json(saved), fieldsJson: json(changed), sourceBefore: json(sourceBefore), sourceAfter: json({ targetVideoId: videoId, sourceHash, rawJson: row.rawJson, frameProof }) } });
     await tx.wordPressMetadataSource.update({ where: { id: source.id }, data: { latestChangeId: change.id } });
     await tx.metadataImportRow.update({ where: { id: rowId }, data: { status: "APPLIED", previewJson: Prisma.DbNull, previewToken: null, previewActorId: null } });
@@ -248,17 +248,17 @@ export class MetadataImportService {
       const changes = await tx.metadataChange.findMany({
         where: { revertedAt: null, row: { batchId, status: "APPLIED" }, video: { deletedAt: null, status: { notIn: ["DELETING", "DELETED"] } } },
         orderBy: { row: { ordinal: "asc" } }, take: 501,
-        select: { fieldsJson: true, video: { select: { id: true, title: true, publicId: true, posterKey: true, category: { select: { name: true } }, files: { select: { id: true, role: true } } } } }
+        select: { fieldsJson: true, row: { select: { id: true, rawJson: true } }, video: { select: { id: true, title: true, publicId: true, posterKey: true, category: { select: { name: true } }, files: { select: { id: true, role: true } } } } }
       });
       if (changes.length > 500) throw new BadRequestException("จำนวนรายการเกินขอบเขต batch");
-      const unique = new Map(changes.filter(change => Array.isArray(change.fieldsJson) && change.fieldsJson.length > 0).map(change => [change.video.id, change.video]));
+      const unique = new Map(changes.filter(change => (Array.isArray(change.fieldsJson) && change.fieldsJson.length > 0) || !!sourceOldEmbed(change.row?.rawJson)).map(change => [change.row?.id || change.video.id, { ...change.video, oldEmbed: sourceOldEmbed(change.row?.rawJson) }]));
       if (!unique.size) return { batchId, exportedAt: new Date().toISOString(), videos: [] };
       let player: string;
       try { const url = new URL(process.env.PLAYER_URL || process.env.ADMIN_URL || ""); if (!["http:", "https:"].includes(url.protocol)) throw new Error(); player = url.origin; }
       catch { throw new ConflictException("ยังไม่ได้ตั้งค่า PLAYER_URL ให้ถูกต้อง"); }
       const videos = [...unique.values()].map(video => {
         const fileId = ["HLS_MANIFEST", "PLAYBACK", "ORIGINAL"].map(role => video.files.find(file => file.role === role)?.id).find(Boolean) || video.id;
-        return { title: video.title, category: video.category?.name || "", embedUrl: `${player}/embed/${video.publicId}`, thumbnailUrl: video.posterKey ? createPosterDeliveryUrl({ videoPublicId: video.publicId, fileId, storageKey: video.posterKey }) : "" };
+        return { oldEmbed: video.oldEmbed, title: video.title, category: video.category?.name || "", embedUrl: `${player}/embed/${video.publicId}`, thumbnailUrl: video.posterKey ? createPosterDeliveryUrl({ videoPublicId: video.publicId, fileId, storageKey: video.posterKey }) : "" };
       });
       return { batchId, exportedAt: new Date().toISOString(), videos };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
@@ -289,4 +289,13 @@ export class MetadataImportService {
       return { reverted: true, replay: false };
     }, { timeout: 15000 });
   }
+}
+
+// Only the evidenced RetroTube embed field is exported; never invent an old URL.
+export function sourceOldEmbed(raw: unknown): string {
+  const record = (raw as { record?: { video_embed_code_raw?: unknown } } | null)?.record;
+  const entries = record?.video_embed_code_raw;
+  if (!Array.isArray(entries)) return "";
+  const values = entries.filter(item => item?.source_field === "embed");
+  return values.length === 1 && typeof values[0]?.value === "string" ? values[0].value : "";
 }

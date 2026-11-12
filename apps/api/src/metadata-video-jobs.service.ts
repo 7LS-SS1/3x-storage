@@ -6,7 +6,7 @@ import { PrismaService } from "./prisma.service";
 import { AdminSessionGuard, CsrfGuard, type AdminRequest } from "./admin-auth.guard";
 import { MetadataAdminGuard } from "./metadata-import.controller";
 
-export const videoJobInput = z.object({ threshold: z.literal(80).default(80), samples: z.union([z.literal(12), z.literal(30), z.literal(60)]).default(30), restart: z.boolean().default(false) }).strict();
+export const videoJobInput = z.object({ threshold: z.number().int().min(0).max(100).default(80), samples: z.union([z.literal(12), z.literal(30), z.literal(60)]).default(30), restart: z.boolean().default(false) }).strict();
 export const videoEligibility = { deletedAt: null, posterKey: null, status: { in: ["UPLOADED", "PROCESSING", "READY"] as ("UPLOADED" | "PROCESSING" | "READY")[] } };
 export const LEASE_MS = 90_000;
 export type ClaimedTask = MetadataVideoTask & { leaseToken: string };
@@ -80,7 +80,7 @@ export class MetadataVideoJobs {
     const videos = await this.prisma.video.findMany({ where: { id: { in: [...new Set(matches.map(m => m.videoId))] }, deletedAt: null, status: { notIn: ["DELETED", "DELETING"] } }, select: { id: true, publicId: true, title: true } });
     const count = (kind: string, statuses?: string[]) => groups.filter(g => g.kind === kind && (!statuses || statuses.includes(g.status))).reduce((n, g) => n + g._count, 0);
     return {
-      job: { id: job.id, status: job.status, threshold: 80, samples: job.samples, createdAt: job.createdAt, lastActivityAt: activity._max.updatedAt || job.createdAt,
+      job: { id: job.id, status: job.status, threshold: job.threshold, samples: job.samples, createdAt: job.createdAt, lastActivityAt: activity._max.updatedAt || job.createdAt,
         applied: await this.prisma.metadataImportRow.count({ where: { batchId, status: { in: ["APPLIED", "NOOP"] } } }), skipped: count("VIDEO", ["SKIPPED"]),
         sourceTotal: count("SOURCE"), loaded: count("SOURCE", ["DONE", "FAILED"]), total: count("VIDEO"), scanned: count("VIDEO", ["DONE", "FAILED", "SKIPPED"]), failed: count("VIDEO", ["FAILED"]), sourceFailed: count("SOURCE", ["FAILED"]),
         frames: groups.reduce((n, g) => n + (g._sum.framesDone || 0), 0), cached: groups.reduce((n, g) => n + (g._sum.cacheHits || 0), 0), current, failures },
