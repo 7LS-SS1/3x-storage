@@ -65,15 +65,20 @@ export class MetadataVideoJobs {
   async status(batchId: string, actorUserId: string, page: number) {
     const job = await this.prisma.metadataVideoJob.findUnique({ where: { batchId_actorUserId: { batchId, actorUserId } } });
     if (!job) return { job: null, rows: [] };
-    const [groups, activity, current, failures, rows, removedGroups] = await Promise.all([
+    const [groups, activity, current, failures, rows, videoCounts] = await Promise.all([
       this.prisma.metadataVideoTask.groupBy({ by: ["kind", "status"], where: { jobId: job.id }, _count: true, _sum: { framesDone: true, cacheHits: true } }),
       this.prisma.metadataVideoTask.aggregate({ where: { jobId: job.id }, _max: { updatedAt: true } }),
       this.prisma.metadataVideoTask.findMany({ where: { jobId: job.id, kind: "VIDEO", status: "RUNNING", leaseUntil: { gt: new Date() } }, select: { refId: true, framesDone: true }, take: 4 }),
       this.prisma.metadataVideoTask.findMany({ where: { jobId: job.id, status: "FAILED" }, select: { refId: true, kind: true, error: true }, take: 100, orderBy: { updatedAt: "desc" } }),
       this.prisma.metadataImportRow.findMany({ where: { batchId }, select: { id: true, status: true }, orderBy: { ordinal: "asc" }, skip: (page - 1) * 25, take: 25 }),
-      this.prisma.$queryRaw<{ status: string; count: number }[]>`SELECT t.status, COUNT(*)::int AS count FROM "MetadataVideoTask" t
-        WHERE t."jobId"=${job.id} AND t.kind='VIDEO' AND EXISTS
-        (SELECT 1 FROM "WordPressMetadataSource" s WHERE s."targetVideoId"=t."refId" AND s.active=true) GROUP BY t.status`
+      // One SQL snapshot keeps totals coherent while workers finish in parallel.
+      this.prisma.$queryRaw<{ initialTotal: number; removed: number; scanned: number }[]>`
+        SELECT COUNT(*)::int AS "initialTotal",
+          COUNT(*) FILTER (WHERE mapped)::int AS removed,
+          COUNT(*) FILTER (WHERE NOT mapped AND status IN ('DONE','FAILED'))::int AS scanned
+        FROM (SELECT t.status, EXISTS (SELECT 1 FROM "WordPressMetadataSource" s
+          WHERE s."targetVideoId"=t."refId" AND s.active=true) AS mapped
+          FROM "MetadataVideoTask" t WHERE t."jobId"=${job.id} AND t.kind='VIDEO') videos`
     ]);
     const ids = rows.map(row => row.id);
     const [sources, matches, frameChanges] = await Promise.all([
@@ -83,12 +88,11 @@ export class MetadataVideoJobs {
     ]);
     const videos = await this.prisma.video.findMany({ where: { id: { in: [...new Set(matches.map(m => m.videoId))] }, deletedAt: null, status: { notIn: ["DELETED", "DELETING"] } }, select: { id: true, publicId: true, title: true } });
     const count = (kind: string, statuses?: string[]) => groups.filter(g => g.kind === kind && (!statuses || statuses.includes(g.status))).reduce((n, g) => n + g._count, 0);
-    const removed = removedGroups.reduce((n, g) => n + g.count, 0);
-    const removedScanned = removedGroups.filter(g => ["DONE", "FAILED"].includes(g.status)).reduce((n, g) => n + g.count, 0);
+    const { initialTotal, removed, scanned } = videoCounts[0]!;
     return {
       job: { id: job.id, status: job.status, threshold: job.threshold, samples: job.samples, createdAt: job.createdAt, lastActivityAt: activity._max.updatedAt || job.createdAt,
         applied: await this.prisma.metadataImportRow.count({ where: { batchId, status: { in: ["APPLIED", "NOOP"] } } }), skipped: count("VIDEO", ["SKIPPED"]),
-        sourceTotal: count("SOURCE"), loaded: count("SOURCE", ["DONE", "FAILED"]), initialTotal: count("VIDEO"), removed, total: count("VIDEO") - removed, scanned: count("VIDEO", ["DONE", "FAILED"]) - removedScanned, failed: count("VIDEO", ["FAILED"]), sourceFailed: count("SOURCE", ["FAILED"]),
+        sourceTotal: count("SOURCE"), loaded: count("SOURCE", ["DONE", "FAILED"]), initialTotal, removed, total: initialTotal - removed, scanned, failed: count("VIDEO", ["FAILED"]), sourceFailed: count("SOURCE", ["FAILED"]),
         frames: groups.reduce((n, g) => n + (g._sum.framesDone || 0), 0), cached: groups.reduce((n, g) => n + (g._sum.cacheHits || 0), 0), current, failures },
       rows: ids.map(rowId => {
         const source = sources.find(s => s.refId === rowId);

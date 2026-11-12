@@ -103,7 +103,7 @@ export class MetadataVideoProcessor {
           await this.jobs.renew(task, { status: "SKIPPED", leaseToken: null }); return;
         }
         const sources = await pendingSources();
-        if (!sources.length) { await this.jobs.renew(task, { status: "DONE", leaseToken: null }); return; }
+        if (!sources.length) { await this.jobs.renew(task, { status: "SKIPPED", leaseToken: null }); return; }
         let image = cached.get(timeMs);
         if (image) hits++;
         else {

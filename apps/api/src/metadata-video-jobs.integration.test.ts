@@ -177,6 +177,21 @@ describe.skipIf(!url)("durable video jobs against PostgreSQL", () => {
     expect(await db.metadataChange.count({where:{revertedAt:{not:null}}})).toBe(2);
   });
 
+  it("keeps unmatched videos for the next file and removes only its successful matches", async () => {
+    await createVideo("video2");
+    const compare=vi.spyOn(images,"compareCovers").mockReturnValue({score:20,exact:false});
+    await jobs.start("batch","admin",{samples:12,threshold:80});await drain();
+    expect((await jobs.status("batch","admin",1)).job).toMatchObject({total:2,removed:0,scanned:2});
+    await batch("next-file");compare.mockReturnValue({score:90,exact:false});
+    await jobs.start("next-file","admin",{samples:12,threshold:80});await drain();
+    expect((await jobs.status("next-file","admin",1)).job).toMatchObject({initialTotal:2,total:1,removed:1,scanned:0});
+    const matched=await db.metadataChange.findFirstOrThrow();
+    await batch("third-file");await jobs.start("third-file","admin",{threshold:80});
+    const tasks=await db.metadataVideoTask.findMany({where:{job:{batchId:"third-file"},kind:"VIDEO"}});
+    expect(tasks).toHaveLength(1);expect(tasks[0]!.refId).not.toBe(matched.videoId);
+    expect(await db.video.count()).toBe(2);
+  });
+
   it("fences two jobs that already claimed the same video", async () => {
     await batch('other');
     await db.metadataImportRow.update({where:{id:'other-row'},data:{postId:'2'}});

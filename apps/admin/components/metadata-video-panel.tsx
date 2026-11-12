@@ -37,7 +37,7 @@ export function MetadataVideoPanel({ scan, samples, setSamples }: {
       {job && !running && !!(job.failed + job.sourceFailed) && <button disabled={disabled} onClick={() => void scan.control("retry")}>ลองรายการที่ผิดพลาดอีกครั้ง</button>}
       <button disabled={disabled} onClick={scan.refresh}>โหลดความคืบหน้าใหม่</button>
     </div>
-    <p>เมื่อบันทึกสำเร็จจะนำ Video ID นั้นออกจากกลุ่มรอจับคู่ทันที ไฟล์ยังอยู่ใน Storage ตามเดิม รายการที่บันทึกแล้วจะไม่ถูกเปรียบเทียบซ้ำ เมื่อจับคู่ครบจะข้ามคิวที่เหลือ เก็บประวัติก่อน–หลังและย้อนคืนได้ เริ่มรอบใหม่ไม่ลบประวัติหรือเฟรมที่เก็บไว้</p>
+    <p>เมื่อบันทึกสำเร็จจะนำ Video ID นั้นออกจากกลุ่มรอจับคู่ทันที ไฟล์ยังอยู่ใน Storage ตามเดิม วิดีโอที่คะแนนไม่ผ่านหรือยังไม่พบคู่จะยังอยู่เพื่อเทียบกับไฟล์ถัดไป รายการที่บันทึกแล้วจะไม่ถูกเปรียบเทียบซ้ำ เมื่อจับคู่ครบจะข้ามคิวที่เหลือ เก็บประวัติก่อน–หลังและย้อนคืนได้ เริ่มรอบใหม่ไม่ลบประวัติหรือเฟรมที่เก็บไว้</p>
     {!!job?.failures.length && <details><summary>รายการที่ผิดพลาด (ล่าสุดไม่เกิน 100 รายการ)</summary>{job.failures.map((failure,i) => <p key={i}>{failure.kind === "SOURCE" ? "รูปต้นทาง" : "วิดีโอ"} {failure.refId}: {failure.error}</p>)}</details>}
   </section>;
 }
